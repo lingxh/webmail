@@ -48,6 +48,24 @@ function normalizeLocale(locale: string | undefined | null): SupportedLocale {
   return 'en';
 }
 
+function detectBrowserLocale(): SupportedLocale {
+  if (typeof navigator === 'undefined') return 'en';
+
+  const preferred = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    navigator.language,
+  ];
+
+  for (const locale of preferred) {
+    const normalized = normalizeLocale(locale);
+    if (normalized in ALL_MESSAGES) {
+      return normalized;
+    }
+  }
+
+  return 'en';
+}
+
 interface IntlProviderProps {
   locale: string;
   messages: Record<string, unknown>;
@@ -76,8 +94,24 @@ export function IntlProvider({ locale: initialLocale, children }: IntlProviderPr
 
   // Sync initial locale with store on first mount only
   useEffect(() => {
+    try {
+      const persisted = localStorage.getItem('locale-storage');
+
+      // First visit: use browser language (supports zh_CN / zh-HK / etc.)
+      if (!persisted) {
+        const detected = detectBrowserLocale();
+        setLocale(detected);
+        setActiveLocale(detected);
+        return;
+      }
+    } catch {
+      // Ignore storage errors and fall back to server locale
+    }
+
     if (!currentLocale) {
-      setLocale(normalizeLocale(initialLocale));
+      const fallback = normalizeLocale(initialLocale);
+      setLocale(fallback);
+      setActiveLocale(fallback);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
