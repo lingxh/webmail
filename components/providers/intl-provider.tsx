@@ -30,6 +30,24 @@ const ALL_MESSAGES = {
   zh: zhMessages,
 };
 
+type SupportedLocale = keyof typeof ALL_MESSAGES;
+
+function normalizeLocale(locale: string | undefined | null): SupportedLocale {
+  if (!locale) return 'en';
+
+  const normalized = locale.toLowerCase().replace('_', '-');
+  if (normalized in ALL_MESSAGES) {
+    return normalized as SupportedLocale;
+  }
+
+  const primary = normalized.split('-')[0];
+  if (primary in ALL_MESSAGES) {
+    return primary as SupportedLocale;
+  }
+
+  return 'en';
+}
+
 interface IntlProviderProps {
   locale: string;
   messages: Record<string, unknown>;
@@ -39,7 +57,9 @@ interface IntlProviderProps {
 export function IntlProvider({ locale: initialLocale, children }: IntlProviderProps) {
   const currentLocale = useLocaleStore((state) => state.locale);
   const setLocale = useLocaleStore((state) => state.setLocale);
-  const [activeLocale, setActiveLocale] = useState(currentLocale || initialLocale);
+  const [activeLocale, setActiveLocale] = useState<SupportedLocale>(
+    normalizeLocale(currentLocale || initialLocale)
+  );
   const [timeZone, setTimeZone] = useState<string>('UTC');
 
   // Detect user's timezone on mount
@@ -57,7 +77,7 @@ export function IntlProvider({ locale: initialLocale, children }: IntlProviderPr
   // Sync initial locale with store on first mount only
   useEffect(() => {
     if (!currentLocale) {
-      setLocale(initialLocale);
+      setLocale(normalizeLocale(initialLocale));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -65,14 +85,14 @@ export function IntlProvider({ locale: initialLocale, children }: IntlProviderPr
   // Switch locale immediately when store changes
   useEffect(() => {
     if (currentLocale) {
-      setActiveLocale(currentLocale);
+      setActiveLocale(normalizeLocale(currentLocale));
     }
   }, [currentLocale]);
 
   return (
     <NextIntlClientProvider
       locale={activeLocale}
-      messages={ALL_MESSAGES[activeLocale as keyof typeof ALL_MESSAGES]}
+      messages={ALL_MESSAGES[activeLocale]}
       timeZone={timeZone}
     >
       {children}
