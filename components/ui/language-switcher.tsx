@@ -8,6 +8,8 @@ export function LanguageSwitcher({ className }: { className?: string }) {
   const currentLocale = useLocale();
   const setLocale = useLocaleStore((state) => state.setLocale);
 
+  const normalizedLocale = currentLocale.toLowerCase().replace(/_/g, '-').split('-')[0];
+
   const languages = [
     { value: 'en', label: 'English' },
     { value: 'fr', label: 'Français' },
@@ -25,7 +27,7 @@ export function LanguageSwitcher({ className }: { className?: string }) {
   return (
     <div className={className}>
       <Select
-        value={currentLocale}
+        value={normalizedLocale}
         onChange={setLocale}
         options={languages}
       />

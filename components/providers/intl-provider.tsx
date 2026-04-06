@@ -35,7 +35,7 @@ type SupportedLocale = keyof typeof ALL_MESSAGES;
 function normalizeLocale(locale: string | undefined | null): SupportedLocale {
   if (!locale) return 'en';
 
-  const normalized = locale.toLowerCase().replace('_', '-');
+  const normalized = locale.trim().toLowerCase().replace(/_/g, '-');
   if (normalized in ALL_MESSAGES) {
     return normalized as SupportedLocale;
   }
@@ -89,10 +89,16 @@ export function IntlProvider({ locale: initialLocale, children }: IntlProviderPr
     }
   }, [currentLocale]);
 
+  const fallbackLocale = normalizeLocale(initialLocale);
+  const resolvedMessages =
+    ALL_MESSAGES[activeLocale] ??
+    ALL_MESSAGES[fallbackLocale] ??
+    enMessages;
+
   return (
     <NextIntlClientProvider
       locale={activeLocale}
-      messages={ALL_MESSAGES[activeLocale]}
+      messages={resolvedMessages}
       timeZone={timeZone}
     >
       {children}
