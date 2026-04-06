@@ -32,6 +32,43 @@ const ALL_MESSAGES = {
   zh: zhMessages,
 };
 
+type SupportedLocale = keyof typeof ALL_MESSAGES;
+
+const AUTO_SWITCH_LOCALE_ON_FIRST_VISIT =
+  process.env.NEXT_PUBLIC_AUTO_SWITCH_LOCALE_ON_FIRST_VISIT === 'true';
+
+function normalizeLocale(locale: string | undefined | null): SupportedLocale | null {
+  if (!locale) return null;
+
+  const normalized = locale.trim().toLowerCase().replace(/_/g, '-');
+  if (normalized in ALL_MESSAGES) {
+    return normalized as SupportedLocale;
+  }
+
+  const primary = normalized.split('-')[0];
+  if (primary in ALL_MESSAGES) {
+    return primary as SupportedLocale;
+  }
+
+  return null;
+}
+
+function detectBrowserLocale(): SupportedLocale {
+  if (typeof navigator === 'undefined') return 'en';
+
+  const preferred = [
+    ...(navigator.languages ?? []),
+    navigator.language,
+  ].filter(Boolean);
+
+  for (const locale of preferred) {
+    const match = normalizeLocale(locale);
+    if (match) return match;
+  }
+
+  return 'en';
+}
+
 interface IntlProviderProps {
   locale: string;
   messages: Record<string, unknown>;
@@ -58,8 +95,23 @@ export function IntlProvider({ locale: initialLocale, children }: IntlProviderPr
 
   // Sync initial locale with store on first mount only
   useEffect(() => {
+    try {
+      const persisted = localStorage.getItem('locale-storage');
+
+      if (!persisted && AUTO_SWITCH_LOCALE_ON_FIRST_VISIT) {
+        const detected = detectBrowserLocale();
+        setLocale(detected);
+        setActiveLocale(detected);
+        return;
+      }
+    } catch {
+      // Ignore storage errors and fall back to server locale
+    }
+
     if (!currentLocale) {
-      setLocale(initialLocale);
+      const fallback = normalizeLocale(initialLocale) ?? 'en';
+      setLocale(fallback);
+      setActiveLocale(fallback);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
