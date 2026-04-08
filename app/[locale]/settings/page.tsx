@@ -233,10 +233,10 @@ export default function SettingsPage() {
   // Mobile layout
   if (!isDesktop) {
     // Mobile: show content view
-    if (mobileShowContent) {
-      return (
-        <div className="flex flex-col h-dvh bg-background">
-          {/* Mobile content header */}
+      if (mobileShowContent) {
+        return (
+          <div className="flex flex-col h-dvh bg-background">
+            {/* Mobile content header */}
           <div className="flex items-center gap-2 px-4 h-14 border-b border-border bg-background shrink-0">
             <Button
               variant="ghost"

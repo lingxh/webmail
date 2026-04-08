@@ -16,7 +16,7 @@ import { NavigationRail } from "@/components/layout/navigation-rail";
 import { SidebarAppsModal } from "@/components/layout/sidebar-apps-modal";
 import { InlineAppView } from "@/components/layout/inline-app-view";
 import { useSidebarApps } from "@/hooks/use-sidebar-apps";
-import { useIsMobile } from "@/hooks/use-media-query";
+import { useIsMobile, useIsTablet } from "@/hooks/use-media-query";
 import { usePolicyStore } from "@/stores/policy-store";
 import { FileBrowser } from "@/components/files/file-browser";
 import { ImagePreviewModal } from "@/components/files/image-preview-modal";
@@ -82,6 +82,8 @@ export default function FilesPage() {
   } = useFileStore();
 
   const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+  const isCompactLayout = isMobile || isTablet;
   const [folderLayout, setFolderLayout] = useState<FolderLayout>(() => loadFilesSettings().folderLayout);
   const hasFetched = useRef(false);
 
@@ -363,8 +365,8 @@ export default function FilesPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="flex h-dvh bg-background overflow-hidden">
-      {!isMobile && (
+    <div className={cn("flex h-dvh bg-background overflow-hidden", isCompactLayout && "flex-col")}>
+      {!isCompactLayout && (
         <div className="w-14 bg-secondary flex flex-col flex-shrink-0" style={{ borderRight: '1px solid rgba(128, 128, 128, 0.3)' }}>
           <NavigationRail
             collapsed
@@ -386,7 +388,7 @@ export default function FilesPage() {
         <div className={cn("flex flex-1 min-h-0", inlineApp && "hidden")}>
           <div className="flex-1 min-w-0 flex flex-col">
             {folderLayout !== "sidebar" && (
-              <div className={cn("p-4 border-b border-border", isMobile && "px-3 py-3")}>
+              <div className={cn("p-4 border-b border-border", isCompactLayout && "px-3 py-3")}>
                 <div className="flex items-center justify-between">
                   <Button
                     variant="ghost"
@@ -470,7 +472,7 @@ export default function FilesPage() {
           </div>
         </div>
 
-        {isMobile && (
+        {isCompactLayout && (
           <NavigationRail
             orientation="horizontal"
             onManageApps={handleManageApps}

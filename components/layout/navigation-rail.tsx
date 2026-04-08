@@ -7,7 +7,7 @@ import { AccountSwitcher } from "./account-switcher";
 import { icons as lucideIcons, type LucideIcon } from "lucide-react";
 import { useConfig } from "@/hooks/use-config";
 import { useThemeStore } from "@/stores/theme-store";
-import { usePathname, Link } from "@/i18n/navigation";
+import { usePathname, Link, useRouter } from "@/i18n/navigation";
 import NextLink from "next/link";
 import { useTranslations } from "next-intl";
 import { useCalendarStore } from "@/stores/calendar-store";
@@ -162,6 +162,7 @@ export function NavigationRail({
 }: NavigationRailProps) {
   const t = useTranslations("sidebar");
   const pathname = usePathname();
+  const router = useRouter();
   const { appLogoLightUrl, appLogoDarkUrl } = useConfig();
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
   const { supportsCalendar } = useCalendarStore();
@@ -239,6 +240,23 @@ export function NavigationRail({
     return () => { cancelled = true; };
   }, []);
 
+  useEffect(() => {
+    const routes = ["/", "/calendar", "/contacts", "/files", "/settings"];
+    const runPrefetch = () => {
+      routes.forEach((route) => {
+        router.prefetch(route);
+      });
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(runPrefetch, { timeout: 1200 });
+      return () => window.cancelIdleCallback(id);
+    }
+
+    const timeoutId = globalThis.setTimeout(runPrefetch, 250);
+    return () => globalThis.clearTimeout(timeoutId);
+  }, [router]);
+
   const navItems: NavItem[] = [
     { id: "mail", icon: Mail, labelKey: "mail", href: "/", badge: inboxUnread },
     { id: "calendar", icon: Calendar, labelKey: "calendar", href: "/calendar", hidden: !supportsCalendar },
@@ -272,6 +290,7 @@ export function NavigationRail({
             <Link
               key={item.id}
               href={item.href}
+              prefetch
               onClick={activeAppId ? () => onCloseInlineApp?.() : undefined}
               className={cn(
                 "flex flex-col items-center justify-center gap-1 py-2 px-3 min-w-[64px] min-h-[44px] shrink-0",
@@ -351,6 +370,7 @@ export function NavigationRail({
         {/* Settings */}
         <Link
           href="/settings"
+          prefetch
           onClick={activeAppId ? () => onCloseInlineApp?.() : undefined}
           className={cn(
             "flex flex-col items-center justify-center gap-1 py-2 px-3 min-w-[64px] min-h-[44px] shrink-0",
@@ -411,6 +431,7 @@ export function NavigationRail({
             <Link
               key={item.id}
               href={item.href}
+              prefetch
               onClick={activeAppId ? () => onCloseInlineApp?.() : undefined}
               data-tour={`nav-${item.id}`}
               className={cn(
@@ -522,6 +543,7 @@ export function NavigationRail({
 
         <Link
           href="/settings"
+          prefetch
           onClick={activeAppId ? () => onCloseInlineApp?.() : undefined}
           data-tour="nav-settings"
           className={cn(

@@ -179,6 +179,15 @@ body {
     "calt" 1;
 }
 
+@keyframes route-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(360%);
+  }
+}
+
 /* Minimalist scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

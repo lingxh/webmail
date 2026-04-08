@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { getLocale } from "next-intl/server";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
 import { ServiceWorkerRegistration } from "@/components/service-worker-registration";
+import { RouteTransitionManager } from "@/components/layout/route-transition-manager";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -82,6 +83,7 @@ export default async function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <RouteTransitionManager />
         <ServiceWorkerRegistration />
         {children}
         <PWAInstallPrompt />

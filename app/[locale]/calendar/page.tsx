@@ -47,6 +47,7 @@ import { getUserParticipantId } from "@/lib/calendar-participants";
 import { generateBirthdayEvents, createBirthdayCalendar, BIRTHDAY_CALENDAR_ID } from "@/lib/birthday-calendar";
 import { debug } from "@/lib/debug";
 import { getLocaleFromPath, getPathPrefix, replaceWindowLocation } from "@/lib/browser-navigation";
+import { useIsTablet } from "@/hooks/use-media-query";
 
 type PendingScopeAction =
   | { type: "edit"; event: CalendarEvent; updates: Partial<CalendarEvent>; sendScheduling?: boolean }
@@ -59,6 +60,8 @@ function isRecurringEvent(event: CalendarEvent): boolean {
 export default function CalendarPage() {
   const t = useTranslations("calendar");
   const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+  const isCompactLayout = isMobile || isTablet;
   const { showAppsModal, inlineApp, loadedApps, handleManageApps, handleInlineApp, closeInlineApp, closeAppsModal } = useSidebarApps();
   const { client, isAuthenticated, logout, checkAuth, isLoading: authLoading } = useAuthStore();
   const [initialCheckDone, setInitialCheckDone] = useState(() => useAuthStore.getState().isAuthenticated && !!useAuthStore.getState().client);
@@ -933,9 +936,9 @@ export default function CalendarPage() {
   };
 
   return (
-    <div className={cn("flex h-dvh bg-background overflow-hidden", isMobile && "flex-col")}>
+    <div className={cn("flex h-dvh bg-background overflow-hidden", isCompactLayout && "flex-col")}>
       {/* Left Navigation Rail */}
-      {!isMobile && (
+      {!isCompactLayout && (
         <div className="w-14 bg-secondary flex flex-col flex-shrink-0" style={{ borderRight: '1px solid rgba(128, 128, 128, 0.3)' }}>
           <NavigationRail
             collapsed
@@ -955,7 +958,7 @@ export default function CalendarPage() {
       )}
 
       {/* Sidebar - full height */}
-      {!isMobile && !inlineApp && (
+      {!isCompactLayout && !inlineApp && (
         <>
           <div
             className={cn(
@@ -1021,75 +1024,77 @@ export default function CalendarPage() {
           enableCalendarTasks={enableCalendarTasks}
         />
 
-        <div
-          className="flex flex-1 overflow-hidden relative"
-          data-tour="calendar-view"
-          onTouchStart={handleTouchStart}
-          onTouchEnd={handleTouchEnd}
-        >
+        <div className="flex flex-1 overflow-hidden relative">
           <div
-            key={swipeKey}
-            className={cn(
-              "flex flex-1 min-w-0",
-              isMobile && swipeDirection === 'left' && "animate-slide-in-right",
-              isMobile && swipeDirection === 'right' && "animate-slide-in-left",
-            )}
+            className="flex flex-1 overflow-hidden relative"
+            data-tour="calendar-view"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
           >
-            {renderView()}
-          </div>
-
-          {/* Desktop event panel */}
-          {!isMobile && showEventModal && (
-            <div className="w-[400px] border-l border-border flex-shrink-0 overflow-hidden">
-              <EventModal
-                key={editEvent?.id ?? 'new'}
-                event={editEvent}
-                calendars={calendars}
-                defaultDate={defaultModalDate}
-                defaultEndDate={defaultModalEndDate}
-                onSave={handleSaveEvent}
-                onDelete={handleDeleteEvent}
-                onDuplicate={handleDuplicateEvent}
-                onRsvp={handleRsvp}
-                onClose={() => { setShowEventModal(false); setEditEvent(null); setPendingPreview(null); }}
-                onPreviewChange={setPendingPreview}
-                currentUserEmails={currentUserEmails}
-                isMobile={false}
-              />
-            </div>
-          )}
-
-          {/* Desktop task panel */}
-          {!isMobile && showTaskModal && (
-            <div className="w-[400px] border-l border-border flex-shrink-0 overflow-hidden">
-              <TaskModal
-                key={editTask?.id ?? 'new-task'}
-                task={editTask}
-                calendars={calendars}
-                onSave={handleSaveTask}
-                onDelete={handleDeleteTask}
-                onClose={() => { setShowTaskModal(false); setEditTask(null); }}
-                isMobile={false}
-              />
-            </div>
-          )}
-
-          {/* Floating Create Event Button (mobile) */}
-          {isMobile && (
-            <Button
-              onClick={() => openCreateModal()}
-              className="absolute bottom-4 right-4 z-40 h-14 w-14 rounded-full shadow-lg"
-              aria-label={t("events.create")}
+            <div
+              key={swipeKey}
+              className={cn(
+                "flex flex-1 min-w-0",
+                isMobile && swipeDirection === 'left' && "animate-slide-in-right",
+                isMobile && swipeDirection === 'right' && "animate-slide-in-left",
+              )}
             >
-              <Plus className="h-6 w-6" />
-            </Button>
-          )}
+              {renderView()}
+            </div>
+
+            {/* Desktop event panel */}
+            {!isMobile && showEventModal && (
+              <div className="w-[400px] border-l border-border flex-shrink-0 overflow-hidden">
+                <EventModal
+                  key={editEvent?.id ?? 'new'}
+                  event={editEvent}
+                  calendars={calendars}
+                  defaultDate={defaultModalDate}
+                  defaultEndDate={defaultModalEndDate}
+                  onSave={handleSaveEvent}
+                  onDelete={handleDeleteEvent}
+                  onDuplicate={handleDuplicateEvent}
+                  onRsvp={handleRsvp}
+                  onClose={() => { setShowEventModal(false); setEditEvent(null); setPendingPreview(null); }}
+                  onPreviewChange={setPendingPreview}
+                  currentUserEmails={currentUserEmails}
+                  isMobile={false}
+                />
+              </div>
+            )}
+
+            {/* Desktop task panel */}
+            {!isMobile && showTaskModal && (
+              <div className="w-[400px] border-l border-border flex-shrink-0 overflow-hidden">
+                <TaskModal
+                  key={editTask?.id ?? 'new-task'}
+                  task={editTask}
+                  calendars={calendars}
+                  onSave={handleSaveTask}
+                  onDelete={handleDeleteTask}
+                  onClose={() => { setShowTaskModal(false); setEditTask(null); }}
+                  isMobile={false}
+                />
+              </div>
+            )}
+
+            {/* Floating Create Event Button (mobile) */}
+            {isMobile && (
+              <Button
+                onClick={() => openCreateModal()}
+                className="absolute bottom-4 right-4 z-40 h-14 w-14 rounded-full shadow-lg"
+                aria-label={t("events.create")}
+              >
+                <Plus className="h-6 w-6" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
       )}
 
       {/* Mobile Bottom Navigation */}
-      {isMobile && (
+      {isCompactLayout && (
         <div className="shrink-0">
           <NavigationRail
             orientation="horizontal"

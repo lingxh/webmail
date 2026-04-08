@@ -24,7 +24,7 @@ import { SidebarAppsModal } from "@/components/layout/sidebar-apps-modal";
 import { InlineAppView } from "@/components/layout/inline-app-view";
 import { useSidebarApps } from "@/hooks/use-sidebar-apps";
 import { ResizeHandle } from "@/components/layout/resize-handle";
-import { useIsMobile } from "@/hooks/use-media-query";
+import { useIsMobile, useIsTablet } from "@/hooks/use-media-query";
 import type { ContactCard, AddressBook } from "@/lib/jmap/types";
 
 type View =
@@ -82,6 +82,8 @@ export default function ContactsPage() {
   const hasFetched = useRef(false);
   const { dialogProps: confirmDialogProps, confirm: confirmDialog } = useConfirmDialog();
   const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+  const isCompactLayout = isMobile || isTablet;
 
   // Panel resize state - sidebar (categories)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -581,8 +583,8 @@ export default function ContactsPage() {
     }
   };
 
-  const showListPanel = !isMobile || view === "list";
-  const showRightPanel = !isMobile || view !== "list";
+  const showListPanel = !isCompactLayout || view === "list";
+  const showRightPanel = !isCompactLayout || view !== "list";
 
   const mobileBackToList = () => {
     setView("list");
@@ -590,9 +592,9 @@ export default function ContactsPage() {
   };
 
   return (
-    <div className={cn("flex h-dvh bg-background overflow-hidden", isMobile && "flex-col")}>
+    <div className={cn("flex h-dvh bg-background overflow-hidden", isCompactLayout && "flex-col")}>
       {/* Navigation Rail - desktop only */}
-      {!isMobile && (
+      {!isCompactLayout && (
         <div className="w-14 bg-secondary flex flex-col flex-shrink-0" style={{ borderRight: '1px solid rgba(128, 128, 128, 0.3)' }}>
           <NavigationRail
             collapsed
@@ -615,7 +617,7 @@ export default function ContactsPage() {
           {showListPanel && (
             <>
               {/* Panel 1: Categories sidebar */}
-              {!isMobile && (
+              {!isCompactLayout && (
                 <>
                   <div
                     className={cn(
@@ -656,10 +658,10 @@ export default function ContactsPage() {
                 data-tour="contacts-list"
                 className={cn(
                   "border-r border-border bg-background flex flex-col flex-shrink-0",
-                  isMobile ? "w-full" : "",
-                  !isListResizing && !isMobile && "transition-[width] duration-300"
+                  isCompactLayout ? "w-full" : "",
+                  !isListResizing && !isCompactLayout && "transition-[width] duration-300"
                 )}
-                style={!isMobile ? { width: `${listWidth}px` } : undefined}
+                style={!isCompactLayout ? { width: `${listWidth}px` } : undefined}
               >
                 <ContactList
                   contacts={displayedContacts}
@@ -681,7 +683,7 @@ export default function ContactsPage() {
                 />
               </div>
 
-              {!isMobile && (
+              {!isCompactLayout && (
                 <ResizeHandle
                   onResizeStart={() => { listDragStartWidth.current = listWidth; setIsListResizing(true); }}
                   onResize={(delta) => setListWidth(Math.max(220, Math.min(500, listDragStartWidth.current + delta)))}
@@ -696,9 +698,9 @@ export default function ContactsPage() {
           )}
 
           {/* Panel 3: Detail / Form */}
-          {showRightPanel && (
+              {showRightPanel && (
             <div className="flex-1 min-w-0 flex flex-col">
-              {isMobile && (
+              {isCompactLayout && (
                 <div className="px-3 py-2 border-b border-border">
                   <Button
                     variant="ghost"
@@ -718,7 +720,7 @@ export default function ContactsPage() {
           )}
         </div>
 
-        {isMobile && (
+        {isCompactLayout && (
           <NavigationRail
             orientation="horizontal"
             onManageApps={handleManageApps}
