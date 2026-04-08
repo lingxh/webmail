@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard,
@@ -26,7 +26,7 @@ import { useConfig } from '@/hooks/use-config';
 import { useThemeStore } from '@/stores/theme-store';
 import { getActiveAccountSlotHeaders } from '@/lib/auth/active-account-slot';
 
-import { useAuthStore } from '@/stores/auth-store';
+import { replaceWindowLocation } from '@/lib/browser-navigation';
 
 const NAV_GROUPS = [
   {
@@ -61,7 +61,6 @@ const NAV_GROUPS = [
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const pathname = usePathname();
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [isStalwartAdmin, setIsStalwartAdmin] = useState(false);
@@ -93,7 +92,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       // If neither password-based admin nor Stalwart admin, redirect away
       if (!data.enabled && !stalwartAdmin) {
-        router.replace('/');
+        replaceWindowLocation('/');
         return;
       }
 
@@ -115,15 +114,15 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         }
       }
 
-      router.replace('/admin/login');
+      replaceWindowLocation('/admin/login');
     } catch {
-      router.replace('/admin/login');
+      replaceWindowLocation('/admin/login');
     }
   }
 
   async function handleLogout() {
     await fetch('/api/admin/auth', { method: 'DELETE' });
-    router.replace('/admin/login');
+    replaceWindowLocation('/admin/login');
   }
 
   // Don't gate the login page

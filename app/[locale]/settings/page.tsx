@@ -125,6 +125,12 @@ export default function SettingsPage() {
 
   // Check auth on mount
   useEffect(() => {
+    const { isAuthenticated: hydratedAuthenticated, client: hydratedClient } = useAuthStore.getState();
+    if (hydratedAuthenticated && hydratedClient) {
+      setInitialCheckDone(true);
+      return;
+    }
+
     checkAuth().finally(() => {
       setInitialCheckDone(true);
     });

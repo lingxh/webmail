@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
 import { Shield } from 'lucide-react';
 import { useConfig } from '@/hooks/use-config';
 import { useThemeStore } from '@/stores/theme-store';
+import { replaceWindowLocation } from '@/lib/browser-navigation';
 
 export default function AdminLoginPage() {
-  const router = useRouter();
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -34,7 +33,7 @@ export default function AdminLoginPage() {
         return;
       }
 
-      router.push('/admin');
+      replaceWindowLocation('/admin');
     } catch {
       setError('Network error. Please try again.');
     } finally {

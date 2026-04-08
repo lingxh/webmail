@@ -106,6 +106,12 @@ export default function FilesPage() {
 
   // Check auth on mount
   useEffect(() => {
+    const { isAuthenticated: hydratedAuthenticated, client: hydratedClient } = useAuthStore.getState();
+    if (hydratedAuthenticated && hydratedClient) {
+      setInitialCheckDone(true);
+      return;
+    }
+
     checkAuth().finally(() => {
       setInitialCheckDone(true);
     });

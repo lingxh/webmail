@@ -1,16 +1,15 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { useAuthStore } from "@/stores/auth-store";
-import { getPathPrefix } from "@/lib/browser-navigation";
+import { getPathPrefix, replaceWindowLocation } from "@/lib/browser-navigation";
 import { Loader2, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useParams } from "next/navigation";
 
 function OAuthCallbackInner() {
-  const router = useRouter();
   const params = useParams();
   const searchParams = useSearchParams();
   const t = useTranslations("login");
@@ -67,7 +66,7 @@ function OAuthCallbackInner() {
                 redirectTo = saved;
               }
             } catch { /* sessionStorage may be unavailable */ }
-            router.push(redirectTo);
+            replaceWindowLocation(redirectTo);
           } else {
             setError("token_exchange_failed");
           }
@@ -89,7 +88,7 @@ function OAuthCallbackInner() {
                 redirectTo = saved;
               }
             } catch { /* sessionStorage may be unavailable */ }
-            router.push(redirectTo);
+            replaceWindowLocation(redirectTo);
           } else {
             setError("token_exchange_failed");
           }
@@ -115,12 +114,12 @@ function OAuthCallbackInner() {
           <p className="text-muted-foreground text-sm mb-6">
             {t(`oauth_error.${error}`)}
           </p>
-          <Button
-            variant="outline"
-            onClick={() => router.push(`${getPathPrefix(params.locale as string)}/${params.locale}/login`)}
-          >
-            {t("oauth_error.back_to_login")}
-          </Button>
+            <Button
+              variant="outline"
+              onClick={() => replaceWindowLocation(`${getPathPrefix(params.locale as string)}/${params.locale}/login`)}
+            >
+              {t("oauth_error.back_to_login")}
+            </Button>
         </div>
       </div>
     );

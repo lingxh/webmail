@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo, type TouchEvent as ReactTouchEvent } from "react";
-import { useRouter } from "@/i18n/navigation";
 import { useTranslations } from "next-intl";
 import { Plus } from "lucide-react";
 import {
@@ -47,6 +46,7 @@ import type { CalendarEvent, CalendarParticipant } from "@/lib/jmap/types";
 import { getUserParticipantId } from "@/lib/calendar-participants";
 import { generateBirthdayEvents, createBirthdayCalendar, BIRTHDAY_CALENDAR_ID } from "@/lib/birthday-calendar";
 import { debug } from "@/lib/debug";
+import { getLocaleFromPath, getPathPrefix, replaceWindowLocation } from "@/lib/browser-navigation";
 
 type PendingScopeAction =
   | { type: "edit"; event: CalendarEvent; updates: Partial<CalendarEvent>; sendScheduling?: boolean }
@@ -57,7 +57,6 @@ function isRecurringEvent(event: CalendarEvent): boolean {
 }
 
 export default function CalendarPage() {
-  const router = useRouter();
   const t = useTranslations("calendar");
   const isMobile = useIsMobile();
   const { showAppsModal, inlineApp, loadedApps, handleManageApps, handleInlineApp, closeInlineApp, closeAppsModal } = useSidebarApps();
@@ -114,6 +113,12 @@ export default function CalendarPage() {
 
   // Check auth on mount
   useEffect(() => {
+    const { isAuthenticated: hydratedAuthenticated, client: hydratedClient } = useAuthStore.getState();
+    if (hydratedAuthenticated && hydratedClient) {
+      setInitialCheckDone(true);
+      return;
+    }
+
     checkAuth().finally(() => {
       setInitialCheckDone(true);
     });
@@ -124,9 +129,9 @@ export default function CalendarPage() {
       try { sessionStorage.setItem('redirect_after_login', window.location.pathname); } catch { /* ignore */ }
       redirectToLogin();
     } else if (client && !supportsCalendar) {
-      router.push("/");
+      replaceWindowLocation(`${getPathPrefix()}/${getLocaleFromPath()}`);
     }
-  }, [initialCheckDone, isAuthenticated, authLoading, client, supportsCalendar, router]);
+  }, [initialCheckDone, isAuthenticated, authLoading, client, supportsCalendar]);
 
   useEffect(() => {
     if (error) {

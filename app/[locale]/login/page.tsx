@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useRouter } from "@/i18n/navigation";
 import { useParams, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
@@ -15,6 +14,7 @@ import { AlertCircle, Loader2, X, Info, Eye, EyeOff, LogIn, Sun, Moon, Monitor, 
 import { discoverOAuth, type OAuthMetadata } from "@/lib/oauth/discovery";
 import { generateCodeVerifier, generateCodeChallenge, generateState } from "@/lib/oauth/pkce";
 import { OAUTH_SCOPES } from "@/lib/oauth/tokens";
+import { getPathPrefix, replaceWindowLocation } from "@/lib/browser-navigation";
 
 const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0";
 const GIT_COMMIT = process.env.NEXT_PUBLIC_GIT_COMMIT || "unknown";
@@ -61,7 +61,6 @@ function VersionBadge() {
 }
 
 export default function LoginPage() {
-  const router = useRouter();
   const t = useTranslations("login");
   const params = useParams();
   const searchParams = useSearchParams();
@@ -165,9 +164,9 @@ export default function LoginPage() {
           redirectTo = saved;
         }
       } catch { /* ignore */ }
-      router.push(redirectTo);
+      replaceWindowLocation(redirectTo);
     }
-  }, [isAuthenticated, router, isAddAccountMode]);
+  }, [isAuthenticated, isAddAccountMode]);
 
   useEffect(() => {
     clearError();
@@ -444,7 +443,7 @@ export default function LoginPage() {
 
     if (success) {
       saveUsername(formData.username);
-      router.push('/');
+      replaceWindowLocation(`${getPathPrefix(params.locale as string)}/${params.locale}`);
     }
   };
 
@@ -459,7 +458,7 @@ export default function LoginPage() {
           redirectTo = saved;
         }
       } catch { /* ignore */ }
-      router.push(redirectTo);
+      replaceWindowLocation(redirectTo);
     }
   };
 
@@ -467,7 +466,7 @@ export default function LoginPage() {
     setDemoLoading(true);
     const success = await loginDemo();
     if (success) {
-      router.push('/');
+      replaceWindowLocation(`${getPathPrefix(params.locale as string)}/${params.locale}`);
     }
     setDemoLoading(false);
   };
@@ -1031,7 +1030,7 @@ export default function LoginPage() {
                   type="button"
                   variant="ghost"
                   className="w-full h-10 text-sm text-muted-foreground hover:text-foreground"
-                  onClick={() => router.push('/')}
+                  onClick={() => replaceWindowLocation(`${getPathPrefix(params.locale as string)}/${params.locale}`)}
                 >
                   {t("cancel")}
                 </Button>

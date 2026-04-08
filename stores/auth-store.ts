@@ -1182,18 +1182,19 @@ export const useAuthStore = create<AuthState>()(
       },
 
       checkAuth: async () => {
-        const accountStore = useAccountStore.getState();
-        const accounts = accountStore.accounts;
+        try {
+          const accountStore = useAccountStore.getState();
+          const accounts = accountStore.accounts;
 
-        // If the only account is the demo account, re-initialize demo mode
-        // instead of trying to restore a server session (which doesn't exist).
-        if (accounts.length === 1 && accounts[0].serverUrl === 'https://demo.example.com') {
-          await get().loginDemo();
-          return;
-        }
+          // If the only account is the demo account, re-initialize demo mode
+          // instead of trying to restore a server session (which doesn't exist).
+          if (accounts.length === 1 && accounts[0].serverUrl === 'https://demo.example.com') {
+            await get().loginDemo();
+            return;
+          }
 
-        // Multi-account restoration: restore all registered accounts
-        if (accounts.length > 0) {
+          // Multi-account restoration: restore all registered accounts
+          if (accounts.length > 0) {
           // Null out client so the page doesn't fire data-loading effects
           // with a stale client reference while we're restoring accounts.
           set({ isLoading: true, client: null });
@@ -1203,43 +1204,46 @@ export const useAuthStore = create<AuthState>()(
           const activeId = get().activeAccountId;
           const targetId = activeId || defaultAccount?.id || accounts[0].id;
 
-          // Try to connect all accounts
-          for (const account of accounts) {
-            if (clients.has(account.id)) continue; // Already connected
+          const restoreAccountClient = async (account: (typeof accounts)[number]): Promise<void> => {
+            if (clients.has(account.id)) return;
 
             try {
               if (account.authMode === 'oauth') {
                 const res = await fetch(`/api/auth/token?slot=${account.cookieSlot}`, { method: 'PUT' });
-                if (res.ok) {
-                  const { access_token, expires_in } = await res.json();
-                  const refreshFn = get().refreshAccessToken;
-                  const client = JMAPClient.withBearer(account.serverUrl, access_token, account.username, () => refreshFn());
-                  bindClientStatusHandlers(client, set, get, account.id);
-                  await client.connect();
-                  clients.set(account.id, client);
-                  scheduleRefresh(expires_in, get().refreshAccessToken, account.id);
-                  await syncStalwartAuthContext(account.serverUrl, account.username, client.getAuthHeader(), account.cookieSlot);
-                  accountStore.updateAccount(account.id, { isConnected: true, hasError: false });
-                } else {
+                if (!res.ok) {
                   throw new Error(`Token refresh failed: ${res.status}`);
                 }
-              } else if (account.authMode === 'basic' && account.rememberMe) {
+
+                const { access_token, expires_in } = await res.json();
+                const refreshFn = get().refreshAccessToken;
+                const client = JMAPClient.withBearer(account.serverUrl, access_token, account.username, () => refreshFn());
+                bindClientStatusHandlers(client, set, get, account.id);
+                await client.connect();
+                clients.set(account.id, client);
+                scheduleRefresh(expires_in, get().refreshAccessToken, account.id);
+                await syncStalwartAuthContext(account.serverUrl, account.username, client.getAuthHeader(), account.cookieSlot);
+                accountStore.updateAccount(account.id, { isConnected: true, hasError: false, errorMessage: undefined });
+                return;
+              }
+
+              if (account.authMode === 'basic' && account.rememberMe) {
                 const res = await fetch(`/api/auth/session?slot=${account.cookieSlot}`, { method: 'PUT' });
-                if (res.ok) {
-                  const { serverUrl, username, password } = await res.json();
-                  const client = new JMAPClient(serverUrl, username, password);
-                  bindClientStatusHandlers(client, set, get, account.id);
-                  await client.connect();
-                  clients.set(account.id, client);
-                  await syncStalwartAuthContext(serverUrl, username, client.getAuthHeader(), account.cookieSlot);
-                  accountStore.updateAccount(account.id, { isConnected: true, hasError: false });
-                } else {
+                if (!res.ok) {
                   throw new Error(`Session cookie missing: ${res.status}`);
                 }
-              } else {
-                // Basic auth without rememberMe — can't restore
-                throw new Error('No saved session');
+
+                const { serverUrl, username, password } = await res.json();
+                const client = new JMAPClient(serverUrl, username, password);
+                bindClientStatusHandlers(client, set, get, account.id);
+                await client.connect();
+                clients.set(account.id, client);
+                await syncStalwartAuthContext(serverUrl, username, client.getAuthHeader(), account.cookieSlot);
+                accountStore.updateAccount(account.id, { isConnected: true, hasError: false, errorMessage: undefined });
+                return;
               }
+
+              // Basic auth without rememberMe — can't restore
+              throw new Error('No saved session');
             } catch (err) {
               debug.error(`Failed to restore account ${account.id}:`, err);
               if (isRateLimitError(err)) {
@@ -1248,110 +1252,155 @@ export const useAuthStore = create<AuthState>()(
                   hasError: true,
                   errorMessage: 'Temporarily rate limited by server',
                 });
-                continue;
+                return;
               }
+
               // Remove unrestorable accounts so the user is prompted to log in
               // again rather than seeing a stale error entry forever.
               evictAccount(account.id);
               accountStore.removeAccount(account.id);
               fetch(`/api/auth/session?slot=${account.cookieSlot}`, { method: 'DELETE' }).catch(() => {});
             }
+          };
+
+          // Restore all accounts in parallel; wait for the target first to reduce
+          // initial blank-screen time on refresh.
+          const restoreTasks = accounts.map((account) => ({
+            accountId: account.id,
+            promise: restoreAccountClient(account),
+          }));
+
+          const targetTask = restoreTasks.find((task) => task.accountId === targetId);
+          if (targetTask) {
+            await targetTask.promise;
           }
 
           // Activate the target account
-          const targetClient = clients.get(targetId);
-          const targetAccount = accountStore.getAccountById(targetId);
-          if (targetClient && targetAccount) {
-            accountStore.setActiveAccount(targetId);
-            const { identities, primaryIdentity } = loadIdentities(await targetClient.getIdentities(), targetAccount.username);
-            initializeFeatureStores(targetClient);
+            const targetClient = clients.get(targetId);
+            const targetAccount = accountStore.getAccountById(targetId);
+            if (targetClient && targetAccount) {
+              accountStore.setActiveAccount(targetId);
 
-            set({
-              isAuthenticated: true,
-              isLoading: false,
-              serverUrl: targetAccount.serverUrl,
-              username: targetAccount.username,
-              client: targetClient,
-              ...getClientRateLimitState(targetClient),
-              identities,
-              primaryIdentity,
-              authMode: targetAccount.authMode,
-              rememberMe: targetAccount.rememberMe,
-              connectionLost: false,
-              error: null,
-              activeAccountId: targetId,
-            });
+              let identities: Identity[] = [];
+              let primaryIdentity: Identity | null = null;
+              try {
+                const loaded = loadIdentities(await targetClient.getIdentities(), targetAccount.username);
+                identities = loaded.identities;
+                primaryIdentity = loaded.primaryIdentity;
+              } catch (err) {
+                debug.error(`Failed to load identities for ${targetId}:`, err);
+              }
 
-            fetchConfig().then(config => {
-              if (!config.settingsSyncEnabled) return;
-              useSettingsStore.getState().loadFromServer(targetAccount.username, targetAccount.serverUrl).finally(() => {
-                useSettingsStore.getState().enableSync(targetAccount.username, targetAccount.serverUrl);
-              });
-            }).catch(() => {});
-            return;
-          }
-
-          // If target didn't connect, try any connected account
-          for (const [id, client] of clients.entries()) {
-            const acc = accountStore.getAccountById(id);
-            if (acc) {
-              accountStore.setActiveAccount(id);
-              const { identities, primaryIdentity } = loadIdentities(await client.getIdentities(), acc.username);
-              initializeFeatureStores(client);
+              try {
+                initializeFeatureStores(targetClient);
+              } catch (err) {
+                debug.error(`Failed to initialize feature stores for ${targetId}:`, err);
+              }
 
               set({
                 isAuthenticated: true,
                 isLoading: false,
-                serverUrl: acc.serverUrl,
-                username: acc.username,
-                client,
-                ...getClientRateLimitState(client),
+                serverUrl: targetAccount.serverUrl,
+                username: targetAccount.username,
+                client: targetClient,
+                ...getClientRateLimitState(targetClient),
                 identities,
                 primaryIdentity,
-                authMode: acc.authMode,
-                rememberMe: acc.rememberMe,
+                authMode: targetAccount.authMode,
+                rememberMe: targetAccount.rememberMe,
                 connectionLost: false,
                 error: null,
-                activeAccountId: id,
+                activeAccountId: targetId,
+              });
+
+              fetchConfig().then(config => {
+                if (!config.settingsSyncEnabled) return;
+                useSettingsStore.getState().loadFromServer(targetAccount.username, targetAccount.serverUrl).finally(() => {
+                  useSettingsStore.getState().enableSync(targetAccount.username, targetAccount.serverUrl);
+                });
+              }).catch(() => {});
+
+              void Promise.allSettled(restoreTasks.map((task) => task.promise));
+              return;
+            }
+
+            await Promise.allSettled(restoreTasks.map((task) => task.promise));
+
+          // If target didn't connect, try any connected account
+            for (const [id, client] of clients.entries()) {
+              const acc = accountStore.getAccountById(id);
+              if (acc) {
+                accountStore.setActiveAccount(id);
+
+                let identities: Identity[] = [];
+                let primaryIdentity: Identity | null = null;
+                try {
+                  const loaded = loadIdentities(await client.getIdentities(), acc.username);
+                  identities = loaded.identities;
+                  primaryIdentity = loaded.primaryIdentity;
+                } catch (err) {
+                  debug.error(`Failed to load identities for ${id}:`, err);
+                }
+
+                try {
+                  initializeFeatureStores(client);
+                } catch (err) {
+                  debug.error(`Failed to initialize feature stores for ${id}:`, err);
+                }
+
+                set({
+                  isAuthenticated: true,
+                  isLoading: false,
+                  serverUrl: acc.serverUrl,
+                  username: acc.username,
+                  client,
+                  ...getClientRateLimitState(client),
+                  identities,
+                  primaryIdentity,
+                  authMode: acc.authMode,
+                  rememberMe: acc.rememberMe,
+                  connectionLost: false,
+                  error: null,
+                  activeAccountId: id,
+                });
+                return;
+              }
+            }
+
+            // No accounts could be restored
+            if (accounts.some((account) => accountStore.getAccountById(account.id))) {
+              set({
+                isAuthenticated: false,
+                isLoading: false,
+                isRateLimited: false,
+                rateLimitUntil: null,
+                client: null,
+                error: 'connection_failed',
               });
               return;
             }
-          }
 
-          // No accounts could be restored
-          if (accounts.some((account) => accountStore.getAccountById(account.id))) {
+            markSessionExpired();
             set({
               isAuthenticated: false,
               isLoading: false,
               isRateLimited: false,
               rateLimitUntil: null,
               client: null,
-              error: 'connection_failed',
+              serverUrl: null,
+              username: null,
+              authMode: 'basic',
+              rememberMe: false,
+              accessToken: null,
+              tokenExpiresAt: null,
+              activeAccountId: null,
             });
             return;
           }
 
-          markSessionExpired();
-          set({
-            isAuthenticated: false,
-            isLoading: false,
-            isRateLimited: false,
-            rateLimitUntil: null,
-            client: null,
-            serverUrl: null,
-            username: null,
-            authMode: 'basic',
-            rememberMe: false,
-            accessToken: null,
-            tokenExpiresAt: null,
-            activeAccountId: null,
-          });
-          return;
-        }
-
-        // Legacy single-account fallback (for accounts not yet in registry)
-        const state = get();
-        if (state.isAuthenticated && !state.client) {
+          // Legacy single-account fallback (for accounts not yet in registry)
+          const state = get();
+          if (state.isAuthenticated && !state.client) {
           if (state.authMode === 'oauth' && state.serverUrl) {
             set({ isLoading: true, isRateLimited: false, rateLimitUntil: null });
             try {
@@ -1483,25 +1532,36 @@ export const useAuthStore = create<AuthState>()(
             }
           }
 
-          markSessionExpired();
+            markSessionExpired();
 
+            set({
+              isAuthenticated: false,
+              isLoading: false,
+              isRateLimited: false,
+              rateLimitUntil: null,
+              client: null,
+              serverUrl: null,
+              username: null,
+              authMode: 'basic',
+              rememberMe: false,
+              accessToken: null,
+              tokenExpiresAt: null,
+              activeAccountId: null,
+            });
+          }
+
+          set({ isLoading: false });
+        } catch (error) {
+          debug.error('checkAuth failed unexpectedly:', error);
           set({
-            isAuthenticated: false,
             isLoading: false,
+            isAuthenticated: false,
+            client: null,
+            error: 'connection_failed',
             isRateLimited: false,
             rateLimitUntil: null,
-            client: null,
-            serverUrl: null,
-            username: null,
-            authMode: 'basic',
-            rememberMe: false,
-            accessToken: null,
-            tokenExpiresAt: null,
-            activeAccountId: null,
           });
         }
-
-        set({ isLoading: false });
       },
 
       clearError: () => set({ error: null }),
