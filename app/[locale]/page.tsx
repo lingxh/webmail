@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { Sidebar } from "@/components/layout/sidebar";
 import { EmailList } from "@/components/email/email-list";
@@ -8,17 +9,24 @@ import { EmailViewer } from "@/components/email/email-viewer";
 import { EmailComposer } from "@/components/email/email-composer";
 import type { ComposerDraftData } from "@/components/email/email-composer";
 import { ThreadConversationView } from "@/components/email/thread-conversation-view";
-import { MobileHeader, MobileViewerHeader } from "@/components/layout/mobile-header";
-import { ThreadGroup, Email } from "@/lib/jmap/types";
+import { MobileHeader } from "@/components/layout/mobile-header";
+import { ThreadGroup, Email, isUnifiedMailboxId, UNIFIED_ROLE_BY_ID } from "@/lib/jmap/types";
+import { useAccountStore } from "@/stores/account-store";
+import type { UnifiedAccountClient } from "@/lib/unified-mailbox";
 import { KeyboardShortcutsModal } from "@/components/keyboard-shortcuts-modal";
 import { useEmailStore } from "@/stores/email-store";
+import { toast } from "@/stores/toast-store";
 import { useAuthStore, redirectToLogin } from "@/stores/auth-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useContactStore } from "@/stores/contact-store";
 import { useIdentityStore } from "@/stores/identity-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useDeviceDetection } from "@/hooks/use-media-query";
 import { useKeyboardShortcuts } from "@/hooks/use-keyboard-shortcuts";
+import { useRefreshGesture } from "@/hooks/use-refresh-gesture";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { usePromptDialog } from "@/hooks/use-prompt-dialog";
+import { useBrowserNavigation, type NavSnapshot } from "@/hooks/use-browser-navigation";
 import { debug } from "@/lib/debug";
 import { playNotificationSound } from "@/lib/notification-sound";
 import { cn } from "@/lib/utils";
@@ -30,6 +38,7 @@ import {
   ComposerErrorFallback,
 } from "@/components/error";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PromptDialog } from "@/components/ui/prompt-dialog";
 import { TotpReauthDialog } from "@/components/totp-reauth-dialog";
 import { DragDropProvider } from "@/contexts/drag-drop-context";
 import { isFilterEmpty, activeFilterCount } from "@/lib/jmap/search-utils";
@@ -38,16 +47,38 @@ import { NavigationRail } from "@/components/layout/navigation-rail";
 import { SidebarAppsModal } from "@/components/layout/sidebar-apps-modal";
 import { InlineAppView } from "@/components/layout/inline-app-view";
 import { useSidebarApps } from "@/hooks/use-sidebar-apps";
+import { useIdentitySync } from "@/hooks/use-identity-sync";
 import { Input } from "@/components/ui/input";
 import { FilePreviewModal } from "@/components/files/file-preview-modal";
 import { isFilePreviewable } from "@/lib/file-preview";
 import { appendPlainTextSignature } from "@/lib/signature-utils";
+import { computeReplyThreadingHeaders } from "@/lib/email-threading";
 import { Search, Filter, ChevronDown, X, Paperclip, Star, Mail, MailOpen, RotateCcw, PenSquare, PenLine, CheckSquare, Square, AlertTriangle } from "lucide-react";
 import { ResizeHandle } from "@/components/layout/resize-handle";
 import { Button } from "@/components/ui/button";
 import { useConfig } from "@/hooks/use-config";
 import { usePluginStore } from "@/stores/plugin-store";
 import { useThemeStore } from "@/stores/theme-store";
+import { appLifecycleHooks, uiHooks, routerHooks, toastHooks, emailHooks } from "@/lib/plugin-hooks";
+import type { EmailReadView } from "@/lib/plugin-types";
+
+function emailToReadView(email: Email): EmailReadView {
+  return {
+    id: email.id,
+    threadId: email.threadId,
+    mailboxIds: Object.keys(email.mailboxIds || {}).filter(k => email.mailboxIds[k]),
+    from: (email.from || []).map(a => ({ name: a.name || '', email: a.email })),
+    to: (email.to || []).map(a => ({ name: a.name || '', email: a.email })),
+    cc: (email.cc || []).map(a => ({ name: a.name || '', email: a.email })),
+    subject: email.subject || '',
+    receivedAt: email.receivedAt,
+    isRead: !!email.keywords?.['$seen'],
+    isFlagged: !!email.keywords?.['$flagged'],
+    hasAttachment: email.hasAttachment,
+    preview: email.preview || '',
+    keywords: Object.keys(email.keywords || {}).filter(k => email.keywords[k]),
+  };
+}
 
 
 export default function Home() {
@@ -59,7 +90,9 @@ export default function Home() {
   const [composerMode, setComposerMode] = useState<'compose' | 'reply' | 'replyAll' | 'forward'>('compose');
   const [composerDraftText, setComposerDraftText] = useState("");
   const [pendingDraft, setPendingDraft] = useState<ComposerDraftData | null>(null);
+  const [composerSessionId, setComposerSessionId] = useState(0);
   const { dialogProps: confirmDialogProps, confirm: confirmDialog } = useConfirmDialog();
+  const { dialogProps: promptDialogProps, prompt: promptDialog } = usePromptDialog();
   const { showAppsModal, inlineApp, loadedApps, handleManageApps, handleInlineApp, closeInlineApp, closeAppsModal } = useSidebarApps();
   const [initialCheckDone, setInitialCheckDone] = useState(() => useAuthStore.getState().isAuthenticated && !!useAuthStore.getState().client);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
@@ -76,6 +109,16 @@ export default function Home() {
   const markAsReadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { isAuthenticated, client, logout, checkAuth, isLoading: authLoading, connectionLost, isRateLimited, rateLimitUntil } = useAuthStore();
   const { identities } = useIdentityStore();
+  useIdentitySync();
+  const trustedSendersAddressBook = useSettingsStore((state) => state.trustedSendersAddressBook);
+  const { loadTrustedSendersBook, trustedSendersLoaded } = useContactStore();
+
+  // Load trusted senders address book when feature is enabled
+  useEffect(() => {
+    if (trustedSendersAddressBook && client && !trustedSendersLoaded) {
+      loadTrustedSendersBook(client);
+    }
+  }, [trustedSendersAddressBook, client, trustedSendersLoaded, loadTrustedSendersBook]);
 
   useEffect(() => {
     if (!isRateLimited || !rateLimitUntil) {
@@ -92,6 +135,88 @@ export default function Home() {
     const timer = setInterval(updateCountdown, 1000);
     return () => clearInterval(timer);
   }, [isRateLimited, rateLimitUntil]);
+
+  // Plugin hooks: window-level lifecycle + selection + service-worker messages.
+  // One effect because the listeners share a registration / cleanup window.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onFocus = () => { appLifecycleHooks.onWindowFocus.emit(); };
+    const onBlur = () => { appLifecycleHooks.onWindowBlur.emit(); };
+    const onOnline = () => { appLifecycleHooks.onOnline.emit(); };
+    const onOffline = () => { appLifecycleHooks.onOffline.emit(); };
+
+    let selectionTimer: ReturnType<typeof setTimeout> | null = null;
+    const onSelectionChange = () => {
+      if (selectionTimer) clearTimeout(selectionTimer);
+      selectionTimer = setTimeout(() => {
+        const sel = document.getSelection();
+        const text = sel?.toString() ?? '';
+        if (!text) return;
+        const anchorNode = sel?.anchorNode as Node | null;
+        const anchorEl = (anchorNode?.nodeType === Node.ELEMENT_NODE
+          ? anchorNode as Element
+          : anchorNode?.parentElement) ?? null;
+        let source: 'email-body' | 'composer' | 'task-detail' | 'event-detail' | 'other' = 'other';
+        let emailId: string | undefined;
+        if (anchorEl) {
+          if (anchorEl.closest('[data-plugin-source="email-body"], iframe.email-body, .email-viewer-body')) {
+            source = 'email-body';
+            const idEl = anchorEl.closest('[data-email-id]') as HTMLElement | null;
+            emailId = idEl?.dataset.emailId;
+          } else if (anchorEl.closest('[data-plugin-source="composer"], .email-composer')) {
+            source = 'composer';
+          } else if (anchorEl.closest('[data-plugin-source="task-detail"]')) {
+            source = 'task-detail';
+          } else if (anchorEl.closest('[data-plugin-source="event-detail"]')) {
+            source = 'event-detail';
+          }
+        }
+        uiHooks.onTextSelectionChange.emit({ text, source, emailId });
+      }, 150);
+    };
+
+    const onSwMessage = (e: MessageEvent) => {
+      const msg = e.data as { kind?: string; tag?: string; data?: unknown } | null;
+      if (msg && msg.kind === 'notificationclick' && typeof msg.tag === 'string') {
+        toastHooks.onNotificationClick.emit({ tag: msg.tag, data: msg.data });
+      }
+    };
+
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    document.addEventListener('selectionchange', onSelectionChange);
+    if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
+      navigator.serviceWorker.addEventListener('message', onSwMessage);
+    }
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('selectionchange', onSelectionChange);
+      if (selectionTimer) clearTimeout(selectionTimer);
+      if (typeof navigator !== 'undefined' && navigator.serviceWorker) {
+        navigator.serviceWorker.removeEventListener('message', onSwMessage);
+      }
+    };
+  }, []);
+
+  // Plugin hooks: route navigation. Tracks Next.js pathname transitions.
+  const pathname = usePathname();
+  const prevPathnameRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!pathname) return;
+    const from = prevPathnameRef.current;
+    if (from === pathname) return;
+    if (from !== null) {
+      routerHooks.onRouteLeave.emit({ path: from });
+      routerHooks.onNavigate.emit({ path: pathname, from });
+    }
+    routerHooks.onRouteEnter.emit({ path: pathname });
+    prevPathnameRef.current = pathname;
+  }, [pathname]);
 
   // Mobile/tablet responsive hooks
   const { isMobile, isTablet } = useDeviceDetection();
@@ -117,6 +242,7 @@ export default function Home() {
     deleteEmail,
     markAsRead,
     toggleStar,
+    setEmailKeywordsLocal,
     moveToMailbox,
     moveThreadToMailbox,
     searchEmails,
@@ -141,7 +267,159 @@ export default function Home() {
     hasMoreEmails,
     fetchTagCounts,
     fetchEmailContent,
+    isUnifiedView,
+    fetchUnifiedEmails: fetchUnifiedEmailsAction,
+    refreshUnifiedCounts,
+    exitUnifiedView,
+    emptyMailbox,
+    markMailboxAsRead,
+    createMailbox,
+    renameMailbox,
+    deleteMailbox,
+    batchDelete,
+    batchArchive,
+    batchMarkAsRead,
+    batchMarkAsSpam,
+    batchUndoSpam,
   } = useEmailStore();
+
+  const enableUnifiedMailbox = useSettingsStore((s) => s.enableUnifiedMailbox);
+  const accounts = useAccountStore((s) => s.accounts);
+  const connectedAccountsSignature = useMemo(
+    () => accounts.filter((a) => a.isConnected).map((a) => a.id).sort().join(","),
+    [accounts],
+  );
+
+  const buildUnifiedAccounts = useCallback((): UnifiedAccountClient[] => {
+    const connected = useAccountStore.getState().accounts.filter((a) => a.isConnected);
+    const clients = useAuthStore.getState().getAllConnectedClients();
+    const result: UnifiedAccountClient[] = [];
+    for (const account of connected) {
+      const accountClient = clients.get(account.id);
+      if (!accountClient) continue;
+      result.push({
+        accountId: account.id,
+        accountLabel: account.label || account.email,
+        client: accountClient,
+        mailboxes: [],
+      });
+    }
+    return result;
+  }, []);
+
+  const populateUnifiedAccountMailboxes = useCallback(
+    async (list: UnifiedAccountClient[]): Promise<UnifiedAccountClient[]> => {
+      const populated = await Promise.all(
+        list.map(async (entry) => {
+          try {
+            const mailboxes = await entry.client.getMailboxes();
+            return { ...entry, mailboxes };
+          } catch (err) {
+            debug.error('Failed to load mailboxes for unified account', entry.accountId, err);
+            return entry;
+          }
+        }),
+      );
+      return populated;
+    },
+    [],
+  );
+
+  // Browser back / forward integration. The restore handler reads the
+  // latest values from a ref so we don't have to recreate the callback on
+  // every render (and so the popstate listener is never stale).
+  const navRestoreStateRef = useRef({
+    client,
+    emails,
+    mailboxes,
+    selectedMailbox,
+    selectedEmailId: selectedEmail?.id ?? null,
+    conversationThreadId: null as string | null,
+  });
+  navRestoreStateRef.current.client = client;
+  navRestoreStateRef.current.emails = emails;
+  navRestoreStateRef.current.mailboxes = mailboxes;
+  navRestoreStateRef.current.selectedMailbox = selectedMailbox;
+  navRestoreStateRef.current.selectedEmailId = selectedEmail?.id ?? null;
+  navRestoreStateRef.current.conversationThreadId = conversationThread?.threadId ?? null;
+
+  const handleNavRestore = useCallback(async (state: NavSnapshot) => {
+    const ctx = navRestoreStateRef.current;
+
+    // Restore sidebar overlay state.
+    setSidebarOpen(state.sidebarOpen);
+
+    // Restore composer visibility.
+    if (!state.composerOpen) {
+      setShowComposer(false);
+    }
+
+    // Derive the mobile view from the saved snapshot. The view is a
+    // function of which content the user is looking at: an email, a
+    // thread, the composer, or the bare list.
+    const derivedView: "list" | "viewer" =
+      state.emailId || state.threadId || state.composerOpen ? "viewer" : "list";
+    setActiveView(derivedView);
+
+    // Restore mailbox selection. selectMailbox clears the current email,
+    // which is fine because we re-apply the saved email below.
+    if (state.mailboxId && state.mailboxId !== ctx.selectedMailbox) {
+      selectMailbox(state.mailboxId);
+      if (ctx.client) {
+        try {
+          await fetchEmails(ctx.client, state.mailboxId);
+        } catch (error) {
+          debug.error('Failed to fetch emails on history restore:', error);
+        }
+      }
+    }
+
+    // Restore conversation thread (mobile only). We can clear it directly,
+    // but reopening requires the thread group; if the user pressed forward
+    // to return to a thread, we silently skip - back navigation always works.
+    if ((state.threadId ?? null) !== ctx.conversationThreadId) {
+      if (state.threadId === null) {
+        setConversationThread(null);
+        setConversationEmails([]);
+      }
+    }
+
+    // Restore email selection.
+    if (state.emailId !== ctx.selectedEmailId) {
+      if (state.emailId === null) {
+        selectEmail(null);
+      } else {
+        // Try the in-memory list first; the existing useEffect will fetch
+        // body content if it's missing.
+        const found = ctx.emails.find(e => e.id === state.emailId);
+        if (found) {
+          selectEmail(found);
+        } else if (ctx.client) {
+          // Email isn't in the current list (e.g. mailbox just changed).
+          // Fetch it directly.
+          try {
+            const mailbox = ctx.mailboxes.find(mb => mb.id === state.mailboxId);
+            const accountId = mailbox?.isShared ? mailbox.accountId : undefined;
+            const fullEmail = await ctx.client.getEmail(state.emailId, accountId);
+            if (fullEmail) selectEmail(fullEmail);
+          } catch (error) {
+            debug.error('Failed to fetch email on history restore:', error);
+          }
+        }
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useBrowserNavigation({
+    mailboxId: selectedMailbox,
+    emailId: selectedEmail?.id ?? null,
+    threadId: conversationThread?.threadId ?? null,
+    composerOpen: showComposer,
+    sidebarOpen,
+    onRestore: handleNavRestore,
+    enabled: isAuthenticated && mailboxes.length > 0,
+  });
 
   // Keyboard shortcuts handlers
   const keyboardHandlers = useMemo(() => ({
@@ -185,27 +463,77 @@ export default function Home() {
     onToggleStar: () => {
       if (selectedEmail) handleToggleStar();
     },
-    onArchive: () => {
-      if (selectedEmail) handleArchive();
+    onArchive: async () => {
+      if (selectedEmailIds.size > 0 && client) {
+        try {
+          await batchArchive(client);
+        } catch (error) {
+          console.error("Failed to batch archive:", error);
+        }
+      } else if (selectedEmail) {
+        handleArchive();
+      }
     },
-    onDelete: () => {
-      if (selectedEmail) handleDelete();
+    onDelete: async () => {
+      if (selectedEmailIds.size > 0 && client) {
+        const currentMailbox = mailboxes.find(m => m.id === selectedMailbox);
+        const isInTrash = currentMailbox?.role === 'trash';
+        const isInJunk = currentMailbox?.role === 'junk';
+        const permanentlyDeleteJunk = useSettingsStore.getState().permanentlyDeleteJunk;
+        const permanent = isInTrash || (isInJunk && permanentlyDeleteJunk);
+        const confirmed = await confirmDialog({
+          title: permanent
+            ? t('email_list.permanent_delete_confirm_title')
+            : t('email_list.batch_actions.delete_confirm_title'),
+          message: permanent
+            ? t('email_list.permanent_delete_confirm_batch_message', { count: selectedEmailIds.size })
+            : t('email_list.batch_actions.delete_confirm_message', { count: selectedEmailIds.size }),
+          confirmText: permanent
+            ? t('email_list.permanent_delete')
+            : t('email_list.batch_actions.delete'),
+          variant: "destructive",
+        });
+        if (!confirmed) return;
+        try {
+          await batchDelete(client, permanent);
+        } catch (error) {
+          console.error("Failed to batch delete:", error);
+        }
+      } else if (selectedEmail) {
+        handleDelete();
+      }
     },
     onMarkAsUnread: async () => {
-      if (selectedEmail && client) {
+      if (!client) return;
+      if (selectedEmailIds.size > 0) {
+        await batchMarkAsRead(client, false);
+      } else if (selectedEmail) {
         await markAsRead(client, selectedEmail.id, false);
       }
     },
     onMarkAsRead: async () => {
-      if (selectedEmail && client) {
+      if (!client) return;
+      if (selectedEmailIds.size > 0) {
+        await batchMarkAsRead(client, true);
+      } else if (selectedEmail) {
         await markAsRead(client, selectedEmail.id, true);
       }
     },
-    onToggleSpam: () => {
-      if (selectedEmail) {
-        // Check if we're in junk folder
-        const currentMailbox = mailboxes.find(m => m.id === selectedMailbox);
-        const isInJunk = currentMailbox?.role === 'junk';
+    onToggleSpam: async () => {
+      const currentMailbox = mailboxes.find(m => m.id === selectedMailbox);
+      const isInJunk = currentMailbox?.role === 'junk';
+      if (selectedEmailIds.size > 0 && client) {
+        const ids = Array.from(selectedEmailIds);
+        try {
+          if (isInJunk) {
+            await batchUndoSpam(client, ids);
+          } else {
+            await batchMarkAsSpam(client, ids);
+          }
+        } catch (error) {
+          console.error("Failed to batch toggle spam:", error);
+        }
+      } else if (selectedEmail) {
         if (isInJunk) {
           handleUndoSpam();
         } else {
@@ -240,14 +568,29 @@ export default function Home() {
       clearSelection();
     },
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [emails, selectedEmail, client, selectedMailbox, isMobile, isTablet]);
+  }), [emails, selectedEmail, client, selectedMailbox, isMobile, isTablet, selectedEmailIds, mailboxes]);
 
   // Initialize keyboard shortcuts
   useKeyboardShortcuts({
     enabled: isAuthenticated && !showComposer,
     emails,
     selectedEmailId: selectedEmail?.id,
+    selectionCount: selectedEmailIds.size,
     handlers: keyboardHandlers,
+  });
+
+  // Intercept browser refresh gestures (F5, Ctrl/Cmd+R, pull-to-refresh)
+  // and refresh mail data via JMAP instead of reloading the page.
+  useRefreshGesture({
+    enabled: isAuthenticated && !!client,
+    onRefresh: async () => {
+      if (!client) return;
+      const state = useEmailStore.getState();
+      await Promise.all([
+        state.fetchMailboxes(client),
+        state.selectedMailbox ? state.fetchEmails(client, state.selectedMailbox) : state.fetchEmails(client),
+      ]);
+    },
   });
 
   // Update page title based on context
@@ -282,14 +625,15 @@ export default function Home() {
     document.title = title;
   }, [showComposer, composerMode, selectedEmail, selectedMailbox, mailboxes, t, appName]);
 
-  // Check auth on mount
+  // Check auth on mount – skip when already authenticated so that navigating
+  // between routes doesn't retrigger checkAuth's transient `{ client: null,
+  // isLoading: true }` reset, which was flashing the spinner on every nav.
   useEffect(() => {
-    const { isAuthenticated: hydratedAuthenticated, client: hydratedClient } = useAuthStore.getState();
-    if (hydratedAuthenticated && hydratedClient) {
+    const state = useAuthStore.getState();
+    if (state.isAuthenticated && state.client) {
       setInitialCheckDone(true);
       return;
     }
-
     checkAuth().finally(() => {
       setInitialCheckDone(true);
     });
@@ -326,7 +670,10 @@ export default function Home() {
   // Load mailboxes and emails when authenticated (only if not already loaded)
   useEffect(() => {
     if (isAuthenticated && client && mailboxes.length === 0) {
-      const loadData = async () => {
+      let retryTimer: ReturnType<typeof setTimeout> | null = null;
+      let cancelled = false;
+
+      const loadData = async (attempt = 1) => {
         try {
           // First fetch mailboxes and quota (inbox will be auto-selected in fetchMailboxes)
           await Promise.all([
@@ -337,6 +684,15 @@ export default function Home() {
           // Get the selected mailbox (should be inbox by default)
           const state = useEmailStore.getState();
           const selectedMailboxId = state.selectedMailbox;
+
+          // On first login the server may still be provisioning mailboxes.
+          // Retry a few times with back-off before giving up.
+          if (state.mailboxes.length === 0 && attempt <= 5 && !cancelled) {
+            const delay = Math.min(1000 * attempt, 5000);
+            debug.log('jmap', `[Mailbox] No mailboxes returned (attempt ${attempt}), retrying in ${delay}ms`);
+            retryTimer = setTimeout(() => loadData(attempt + 1), delay);
+            return;
+          }
 
           // Fetch emails for the selected mailbox
           if (selectedMailboxId) {
@@ -371,6 +727,12 @@ export default function Home() {
         }
       };
       loadData();
+
+      return () => {
+        cancelled = true;
+        if (retryTimer) clearTimeout(retryTimer);
+        client.closePushNotifications();
+      };
     }
 
     // Cleanup push notifications on unmount
@@ -381,13 +743,69 @@ export default function Home() {
     };
   }, [isAuthenticated, client, mailboxes.length, fetchMailboxes, fetchEmails, fetchQuota, fetchTagCounts, handleStateChange, setPushConnected]);
 
+  // Keep unified mailbox counts in sync when the feature is enabled and more
+  // than one account is connected. Runs whenever the set of connected accounts
+  // or the primary account's mailboxes change (a proxy for "something worth
+  // recounting happened").
+  useEffect(() => {
+    if (!enableUnifiedMailbox || !isAuthenticated || !client) return;
+    const built = buildUnifiedAccounts();
+    if (built.length < 2) return;
+    populateUnifiedAccountMailboxes(built).then((populated) => {
+      refreshUnifiedCounts(populated);
+    });
+  }, [enableUnifiedMailbox, isAuthenticated, client, mailboxes, connectedAccountsSignature, buildUnifiedAccounts, populateUnifiedAccountMailboxes, refreshUnifiedCounts]);
+
+  // System-notification click handler. The push SW navigates the user back
+  // here with `?email=<id>` (specific email it built the toast from) or
+  // `?openLatestUnread=1` (generic "New mail" toast — happens when the
+  // preview API failed). We resolve those params once after the inbox has
+  // finished loading and open the right message, then strip the params so a
+  // refresh doesn't re-open it.
+  const notificationParamHandledRef = useRef(false);
+  useEffect(() => {
+    if (notificationParamHandledRef.current) return;
+    if (!isAuthenticated || !client) return;
+    if (mailboxes.length === 0) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const emailIdParam = params.get('email');
+    const openLatestUnread = params.get('openLatestUnread') === '1';
+    if (!emailIdParam && !openLatestUnread) return;
+
+    // For the latest-unread case we need the inbox emails loaded; bail and
+    // let the effect re-run once `emails` is populated.
+    if (openLatestUnread && emails.length === 0) return;
+
+    notificationParamHandledRef.current = true;
+    window.history.replaceState({}, '', window.location.pathname);
+
+    if (emailIdParam) {
+      setLoadingEmail(true);
+      fetchEmailContent(client, emailIdParam).finally(() => setLoadingEmail(false));
+      return;
+    }
+
+    // emails are sorted receivedAt-desc, so the first unread is the newest.
+    const newestUnread = emails.find(e => !e.keywords?.$seen);
+    if (newestUnread) {
+      selectEmail(newestUnread);
+    }
+  }, [isAuthenticated, client, mailboxes.length, emails, fetchEmailContent, selectEmail, setLoadingEmail]);
+
   // Auto-fetch full email content when an email is auto-selected (e.g. after delete/archive)
   useEffect(() => {
     if (!selectedEmail || !client) return;
-    // If the email lacks bodyValues, it was auto-selected from the list and needs full content
-    if (!selectedEmail.bodyValues) {
+    // If the email lacks bodyValues, it was auto-selected from the list and needs full content.
+    // Skip when handleEmailSelect already started a fetch (it sets isLoadingEmail before
+    // calling selectEmail on the stub), to avoid a duplicate request.
+    if (!selectedEmail.bodyValues && !isLoadingEmail) {
+      const perAccountClient = isUnifiedView && selectedEmail.accountId
+        ? useAuthStore.getState().getClientForAccount(selectedEmail.accountId)
+        : undefined;
+      const fetchClient = perAccountClient ?? client;
       setLoadingEmail(true);
-      fetchEmailContent(client, selectedEmail.id).finally(() => {
+      fetchEmailContent(fetchClient, selectedEmail.id).finally(() => {
         setLoadingEmail(false);
       });
     }
@@ -475,7 +893,9 @@ export default function Home() {
     fromEmail?: string;
     fromName?: string;
     identityId?: string;
-    attachments?: Array<{ blobId: string; name: string; type: string; size: number }>;
+    attachments?: Array<{ blobId: string; name: string; type: string; size: number; disposition?: 'attachment' | 'inline'; cid?: string }>;
+    inReplyTo?: string[];
+    references?: string[];
   }) => {
     if (!client) return;
 
@@ -483,7 +903,7 @@ export default function Home() {
       const effectiveMode = pendingDraft?.mode ?? composerMode;
       const originalEmailId = selectedEmail?.id;
 
-      await sendEmail(client, data.to, data.subject, data.body, data.cc, data.bcc, data.identityId, data.fromEmail, data.draftId, data.fromName, data.htmlBody, data.attachments);
+      await sendEmail(client, data.to, data.subject, data.body, data.cc, data.bcc, data.identityId, data.fromEmail, data.draftId, data.fromName, data.htmlBody, data.attachments, data.inReplyTo, data.references);
       setShowComposer(false);
 
       // Mark the original email with $answered or $forwarded keyword
@@ -518,7 +938,15 @@ export default function Home() {
     }
   };
 
-  const handleReply = (draftText?: string) => {
+  const handleReply = async (draftText?: string) => {
+    if (selectedEmail) {
+      const ok = await emailHooks.onBeforeReply.intercept({
+        originalEmailId: selectedEmail.id,
+        originalEmail: emailToReadView(selectedEmail),
+        mode: 'reply' as const,
+      });
+      if (!ok) return;
+    }
     setComposerDraftText(draftText || "");
     setComposerMode('reply');
     setShowComposer(true);
@@ -549,6 +977,16 @@ export default function Home() {
     const htmlBody = draft.htmlBody?.[0]?.partId && draft.bodyValues?.[draft.htmlBody[0].partId]
       ? draft.bodyValues[draft.htmlBody[0].partId].value
       : undefined;
+
+    // Try to find the identity that matches the draft's from address to preserve it
+    const draftFromEmail = draft.from?.[0]?.email;
+    const matchedIdentity = draftFromEmail
+      ? identities.find(id => id.email === draftFromEmail)
+      : null;
+
+    // Increment session ID to force the composer to remount with fresh state,
+    // even if it was already open (e.g. right-clicking a draft while composing).
+    setComposerSessionId(id => id + 1);
     setPendingDraft({
       to: draft.to?.map(a => a.email).filter(Boolean).join(', ') || '',
       cc: draft.cc?.map(a => a.email).filter(Boolean).join(', ') || '',
@@ -557,7 +995,7 @@ export default function Home() {
       body: htmlBody || bodyText,
       showCc: (draft.cc?.length || 0) > 0,
       showBcc: (draft.bcc?.length || 0) > 0,
-      selectedIdentityId: null,
+      selectedIdentityId: matchedIdentity?.id ?? null,
       subAddressTag: '',
       mode: 'compose',
       draftId: draft.id,
@@ -567,20 +1005,36 @@ export default function Home() {
     if (isMobile) setActiveView('viewer');
   };
 
-  const handleReplyAll = () => {
+  const handleReplyAll = async () => {
+    if (selectedEmail) {
+      const ok = await emailHooks.onBeforeReplyAll.intercept({
+        originalEmailId: selectedEmail.id,
+        originalEmail: emailToReadView(selectedEmail),
+        mode: 'reply-all' as const,
+      });
+      if (!ok) return;
+    }
     setComposerMode('replyAll');
     setShowComposer(true);
     if (isMobile) setActiveView('viewer');
   };
 
-  const handleForward = () => {
+  const handleForward = async () => {
+    if (selectedEmail) {
+      const ok = await emailHooks.onBeforeForward.intercept({
+        originalEmailId: selectedEmail.id,
+        originalEmail: emailToReadView(selectedEmail),
+        mode: 'forward' as const,
+      });
+      if (!ok) return;
+    }
     setComposerMode('forward');
     setShowComposer(true);
     if (isMobile) setActiveView('viewer');
   };
 
-  const handleDelete = async () => {
-    if (!client || !selectedEmail) return;
+  const handleDelete = async (emailToDelete: Email | null = selectedEmail) => {
+    if (!client || !emailToDelete) return;
 
     // Check if we're currently in the trash or junk folder
     const currentMailbox = mailboxes.find(m => m.id === selectedMailbox);
@@ -599,19 +1053,30 @@ export default function Home() {
       if (!confirmed) return;
 
       try {
-        await deleteEmail(client, selectedEmail.id, true);
+        await deleteEmail(client, emailToDelete.id, true);
       } catch (error) {
         console.error("Failed to permanently delete email:", error);
       }
     } else {
       // Not in trash: always move to trash
-      const trashMailbox = mailboxes.find(m => m.role === 'trash' && !m.isShared);
+      const trashMailbox =
+        mailboxes.find(m => m.role === 'trash' && !m.isShared) ??
+        mailboxes.find(m => {
+          if (m.isShared) return false;
+          const lower = m.name.toLowerCase();
+          return lower.includes('trash') || lower.includes('deleted');
+        });
       if (trashMailbox) {
         try {
-          await moveToMailbox(client, selectedEmail.id, trashMailbox.id);
+          await moveToMailbox(client, emailToDelete.id, trashMailbox.id);
         } catch (error) {
           console.error("Failed to move email to trash:", error);
+          const { toast } = await import('sonner');
+          toast.error(error instanceof Error ? error.message : 'Failed to move email to trash');
         }
+      } else {
+        const { toast } = await import('sonner');
+        toast.error('Trash mailbox not found - cannot move email to trash');
       }
     }
   };
@@ -619,8 +1084,11 @@ export default function Home() {
   const handleArchive = async (emailToArchive: Email | null = selectedEmail) => {
     if (!client || !emailToArchive) return;
 
-    // Find archive mailbox
-    const archiveMailbox = mailboxes.find(m => m.role === "archive" || m.name.toLowerCase() === "archive");
+    // Read fresh mailboxes from the store – batch archive calls this in a loop,
+    // and each iteration needs to see folders created by prior iterations.
+    const currentMailboxes = useEmailStore.getState().mailboxes;
+
+    const archiveMailbox = currentMailboxes.find(m => m.role === "archive" || m.name.toLowerCase() === "archive");
     if (!archiveMailbox) return;
 
     const { archiveMode } = useSettingsStore.getState();
@@ -629,14 +1097,12 @@ export default function Home() {
       if (archiveMode === 'single') {
         await moveThreadToMailbox(client, emailToArchive.id, archiveMailbox.id);
       } else {
-        // Determine year/month from the email's received date
         const emailDate = new Date(emailToArchive.receivedAt);
         const year = emailDate.getFullYear().toString();
         const month = (emailDate.getMonth() + 1).toString().padStart(2, '0');
         const archiveId = archiveMailbox.originalId || archiveMailbox.id;
 
-        // Find or create year subfolder under archive
-        let yearMailbox = mailboxes.find(
+        let yearMailbox = currentMailboxes.find(
           m => m.name === year && m.parentId === archiveId
         );
         if (!yearMailbox) {
@@ -647,9 +1113,9 @@ export default function Home() {
         if (archiveMode === 'year') {
           await moveThreadToMailbox(client, emailToArchive.id, yearMailbox.id);
         } else {
-          // archiveMode === 'month' — find or create month subfolder under year
           const yearId = yearMailbox.originalId || yearMailbox.id;
-          let monthMailbox = mailboxes.find(
+          const afterYear = useEmailStore.getState().mailboxes;
+          let monthMailbox = afterYear.find(
             m => m.name === month && m.parentId === yearId
           );
           if (!monthMailbox) {
@@ -681,10 +1147,10 @@ export default function Home() {
     }
   };
 
-  const handleMarkAsSpam = async () => {
-    if (!client || !selectedEmail) return;
+  const handleMarkAsSpam = async (emailToMark: Email | null = selectedEmail) => {
+    if (!client || !emailToMark) return;
 
-    const emailId = selectedEmail.id;
+    const emailId = emailToMark.id;
 
     try {
       await markAsSpam(client, emailId);
@@ -712,11 +1178,11 @@ export default function Home() {
     }
   };
 
-  const handleUndoSpam = async () => {
-    if (!client || !selectedEmail) return;
+  const handleUndoSpam = async (emailToRestore: Email | null = selectedEmail) => {
+    if (!client || !emailToRestore) return;
 
     try {
-      await undoSpam(client, selectedEmail.id);
+      await undoSpam(client, emailToRestore.id);
 
       const toastInstance = (await import('sonner')).toast;
       toastInstance.success(t('email_viewer.spam.toast_not_spam_success'));
@@ -737,26 +1203,30 @@ export default function Home() {
 
       const keywords = { ...email.keywords };
 
-      // Remove old label and legacy color tags - set to false for JMAP to remove them
-      Object.keys(keywords).forEach(key => {
-        if (key.startsWith("$label:") || key.startsWith("$color:")) {
-          keywords[key] = false;
+      if (color === null) {
+        // Remove all label/color tags
+        Object.keys(keywords).forEach(key => {
+          if (key.startsWith("$label:") || key.startsWith("$color:")) {
+            keywords[key] = false;
+          }
+        });
+      } else {
+        const jmapKey = `$label:${color}`;
+        if (keywords[jmapKey] === true) {
+          // Toggle off if already active
+          keywords[jmapKey] = false;
+        } else {
+          // Add the tag without disturbing others
+          keywords[jmapKey] = true;
         }
-      });
-
-      // Add new label tag if specified (using new $label: prefix)
-      if (color) {
-        keywords[`$label:${color}`] = true;
       }
 
       // Update email keywords via JMAP
       await client.updateEmailKeywords(emailId, keywords);
 
-      // Update local state
-      selectEmail(email.id === selectedEmail?.id ? { ...email, keywords } : selectedEmail);
-
-      // Refresh emails list to show color in list
-      await fetchEmails(client, selectedMailbox);
+      // Patch the email in place so the list keeps its scroll/pagination state
+      // instead of being reset to the first page by a full refetch.
+      setEmailKeywordsLocal(emailId, keywords);
 
       // Refresh tag counts
       fetchTagCounts(client);
@@ -766,6 +1236,32 @@ export default function Home() {
   };
 
   const handleMailboxSelect = async (mailboxId: string) => {
+    if (isUnifiedMailboxId(mailboxId)) {
+      const role = UNIFIED_ROLE_BY_ID[mailboxId];
+      if (!role) return;
+
+      selectMailbox(mailboxId);
+      selectEmail(null);
+
+      if (isMobile) {
+        setSidebarOpen(false);
+        setActiveView("list");
+      }
+      if (isTablet) {
+        setTabletListVisible(true);
+      }
+
+      const built = buildUnifiedAccounts();
+      const populated = await populateUnifiedAccountMailboxes(built);
+      await fetchUnifiedEmailsAction(populated, role);
+      refreshUnifiedCounts(populated);
+      return;
+    }
+
+    if (isUnifiedView) {
+      exitUnifiedView();
+    }
+
     selectMailbox(mailboxId);
     selectEmail(null); // Clear selected email when switching mailboxes
 
@@ -845,10 +1341,202 @@ export default function Home() {
     }
   };
 
+  const tCtxMenu = t;
+
+  const handleMarkFolderRead = async (mailboxId: string) => {
+    if (!client) return;
+    try {
+      const count = await markMailboxAsRead(client, mailboxId);
+      await fetchMailboxes(client);
+      if (selectedMailbox === mailboxId) await fetchEmails(client, mailboxId);
+      if (count > 0) {
+        toast.success(tCtxMenu('mailbox_context_menu.toast_marked_read_count', { count }));
+      } else {
+        toast.success(tCtxMenu('mailbox_context_menu.toast_already_read'));
+      }
+    } catch {
+      toast.error(tCtxMenu('mailbox_context_menu.toast_error_mark_read'));
+    }
+  };
+
+  const handleMarkFolderTreeRead = async (mailboxId: string) => {
+    if (!client) return;
+    const collectIds = (rootId: string): string[] => {
+      const ids: string[] = [rootId];
+      const stack = [rootId];
+      while (stack.length > 0) {
+        const current = stack.pop()!;
+        for (const mb of mailboxes) {
+          if (mb.parentId === current) {
+            ids.push(mb.id);
+            stack.push(mb.id);
+          }
+        }
+      }
+      return ids;
+    };
+
+    try {
+      const ids = collectIds(mailboxId);
+      let total = 0;
+      for (const id of ids) {
+        total += await markMailboxAsRead(client, id);
+      }
+      await fetchMailboxes(client);
+      if (selectedMailbox && ids.includes(selectedMailbox)) await fetchEmails(client, selectedMailbox);
+      if (total > 0) {
+        toast.success(tCtxMenu('mailbox_context_menu.toast_marked_read_count', { count: total }));
+      } else {
+        toast.success(tCtxMenu('mailbox_context_menu.toast_already_read'));
+      }
+    } catch {
+      toast.error(tCtxMenu('mailbox_context_menu.toast_error_mark_read'));
+    }
+  };
+
+  const handleMarkAllFoldersRead = async () => {
+    if (!client) return;
+
+    const confirmed = await confirmDialog({
+      title: tCtxMenu('mailbox_context_menu.mark_all_confirm_title'),
+      message: tCtxMenu('mailbox_context_menu.mark_all_confirm_message'),
+      confirmText: tCtxMenu('mailbox_context_menu.mark_all_folders_read'),
+      variant: "default",
+    });
+    if (!confirmed) return;
+
+    try {
+      const total = await client.markAllAsRead();
+      await fetchMailboxes(client);
+      if (selectedMailbox) await fetchEmails(client, selectedMailbox);
+      if (total > 0) {
+        toast.success(tCtxMenu('mailbox_context_menu.toast_marked_read_count', { count: total }));
+      } else {
+        toast.success(tCtxMenu('mailbox_context_menu.toast_already_read'));
+      }
+    } catch {
+      toast.error(tCtxMenu('mailbox_context_menu.toast_error_mark_read'));
+    }
+  };
+
+  const handleEmptyFolderFromContextMenu = async (mailboxId: string) => {
+    if (!client) return;
+    const mailbox = mailboxes.find(mb => mb.id === mailboxId);
+    if (!mailbox) return;
+
+    const confirmed = await confirmDialog({
+      title: tCtxMenu('email_list.empty_folder.confirm_title'),
+      message: tCtxMenu('email_list.empty_folder.confirm_message'),
+      confirmText: tCtxMenu('email_list.empty_folder.confirm_button'),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+
+    try {
+      await emptyMailbox(client, mailboxId);
+      toast.success(tCtxMenu('mailbox_context_menu.toast_emptied'));
+    } catch {
+      toast.error(tCtxMenu('mailbox_context_menu.toast_error_empty'));
+    }
+  };
+
+  const handleCreateSubfolderFromContextMenu = async (parentId: string) => {
+    if (!client) return;
+    const name = await promptDialog({
+      title: tCtxMenu('mailbox_context_menu.new_subfolder'),
+      message: tCtxMenu('mailbox_context_menu.prompt_new_subfolder'),
+      placeholder: tCtxMenu('mailbox_context_menu.placeholder_folder_name'),
+      confirmText: tCtxMenu('mailbox_context_menu.create'),
+    });
+    if (!name) return;
+    try {
+      await createMailbox(client, name, parentId);
+      toast.success(tCtxMenu('mailbox_context_menu.toast_folder_created'));
+    } catch {
+      toast.error(tCtxMenu('mailbox_context_menu.toast_error_create'));
+    }
+  };
+
+  const handleCreateFolderFromContextMenu = async () => {
+    if (!client) return;
+    const name = await promptDialog({
+      title: tCtxMenu('mailbox_context_menu.new_folder'),
+      message: tCtxMenu('mailbox_context_menu.prompt_new_folder'),
+      placeholder: tCtxMenu('mailbox_context_menu.placeholder_folder_name'),
+      confirmText: tCtxMenu('mailbox_context_menu.create'),
+    });
+    if (!name) return;
+    try {
+      await createMailbox(client, name);
+      toast.success(tCtxMenu('mailbox_context_menu.toast_folder_created'));
+    } catch {
+      toast.error(tCtxMenu('mailbox_context_menu.toast_error_create'));
+    }
+  };
+
+  const handleRenameFolderFromContextMenu = async (mailboxId: string) => {
+    if (!client) return;
+    const mailbox = mailboxes.find(mb => mb.id === mailboxId);
+    if (!mailbox) return;
+    const name = await promptDialog({
+      title: tCtxMenu('mailbox_context_menu.rename'),
+      message: tCtxMenu('mailbox_context_menu.prompt_rename'),
+      placeholder: tCtxMenu('mailbox_context_menu.placeholder_folder_name'),
+      defaultValue: mailbox.name,
+      confirmText: tCtxMenu('mailbox_context_menu.rename_confirm'),
+    });
+    if (!name || name === mailbox.name) return;
+    try {
+      await renameMailbox(client, mailboxId, name);
+      toast.success(tCtxMenu('mailbox_context_menu.toast_folder_renamed'));
+    } catch {
+      toast.error(tCtxMenu('mailbox_context_menu.toast_error_rename'));
+    }
+  };
+
+  const handleDeleteFolderFromContextMenu = async (mailboxId: string) => {
+    if (!client) return;
+    const mailbox = mailboxes.find(mb => mb.id === mailboxId);
+    if (!mailbox) return;
+
+    const confirmed = await confirmDialog({
+      title: tCtxMenu('mailbox_context_menu.delete_confirm_title'),
+      message: tCtxMenu('mailbox_context_menu.delete_confirm_message', { name: mailbox.name }),
+      confirmText: tCtxMenu('mailbox_context_menu.delete_folder'),
+      variant: "destructive",
+    });
+    if (!confirmed) return;
+
+    try {
+      await deleteMailbox(client, mailboxId);
+      toast.success(tCtxMenu('mailbox_context_menu.toast_folder_deleted'));
+    } catch (err: unknown) {
+      const jmapType = (err as Error & { jmapType?: string })?.jmapType;
+      if (jmapType === 'mailboxHasChild') {
+        toast.error(tCtxMenu('mailbox_context_menu.toast_error_delete_has_children'));
+      } else if (jmapType === 'mailboxHasEmail') {
+        toast.error(tCtxMenu('mailbox_context_menu.toast_error_delete_has_email'));
+      } else {
+        toast.error(tCtxMenu('mailbox_context_menu.toast_error_delete'));
+      }
+    }
+  };
+
+  const handleRefreshMailboxes = async () => {
+    if (!client) return;
+    try {
+      await fetchMailboxes(client);
+      if (selectedMailbox) await fetchEmails(client, selectedMailbox);
+    } catch {
+      // silent
+    }
+  };
+
   const handleLogout = logout;
 
   const handleSearch = async (query: string) => {
     if (!client) return;
+    if (isUnifiedView) return;
     setSearchQuery(query);
     if (!isFilterEmpty(searchFilters)) {
       await advancedSearch(client);
@@ -867,6 +1555,7 @@ export default function Home() {
 
   const handleAdvancedSearch = async () => {
     if (!client) return;
+    if (isUnifiedView) return;
     await advancedSearch(client);
   };
 
@@ -876,9 +1565,9 @@ export default function Home() {
       clearTimeout(advancedSearchDebounceRef.current);
     }
     advancedSearchDebounceRef.current = setTimeout(() => {
-      if (client) advancedSearch(client);
+      if (client && !isUnifiedView) advancedSearch(client);
     }, 300);
-  }, [client, advancedSearch]);
+  }, [client, advancedSearch, isUnifiedView]);
 
   useEffect(() => {
     return () => {
@@ -939,6 +1628,12 @@ export default function Home() {
 
     const originalEmailId = selectedEmail.id;
 
+    // RFC 5322 §3.6.4 threading — keep the conversation stitched together (#234).
+    const threading = computeReplyThreadingHeaders({
+      messageId: selectedEmail.messageId,
+      references: selectedEmail.references,
+    });
+
     // Send reply with just the body text
     await sendEmail(
       client,
@@ -950,7 +1645,11 @@ export default function Home() {
       primaryIdentity?.id,
       primaryIdentity?.email,
       undefined,
-      primaryIdentity?.name || undefined
+      primaryIdentity?.name || undefined,
+      undefined,
+      undefined,
+      threading?.inReplyTo,
+      threading?.references,
     );
 
     // Mark the original email as answered
@@ -992,7 +1691,13 @@ export default function Home() {
       setShowComposer(false);
     }
 
-    // Set loading state immediately (keep current email visible)
+    // Show the list stub immediately so subject/sender render without
+    // waiting for the body fetch — avoids the loading flicker.
+    const listEmail = emails.find(e => e.id === email.id);
+    if (listEmail) {
+      selectEmail(listEmail);
+    }
+
     setLoadingEmail(true);
 
     // On mobile, switch to viewer
@@ -1007,13 +1712,28 @@ export default function Home() {
 
     // Fetch the full content
     try {
-      // Find selected mailbox to determine accountId (for shared folders)
-      const mailbox = mailboxes.find(mb => mb.id === selectedMailbox);
-      // Only pass accountId for shared mailboxes
-      const accountId = mailbox?.isShared ? mailbox.accountId : undefined;
+      // In unified view each email carries its own accountId. Use that
+      // account's client so we fetch from the server that actually owns it.
+      const emailAccountId = isUnifiedView ? listEmail?.accountId : undefined;
+      const perAccountClient = emailAccountId
+        ? useAuthStore.getState().getClientForAccount(emailAccountId)
+        : undefined;
+      const fetchClient = perAccountClient ?? client;
 
-      const fullEmail = await client.getEmail(email.id, accountId);
+      // For shared folders on the primary client, we still need to pass the
+      // shared account's id. In unified view we use the per-account client
+      // directly, so no explicit accountId is needed.
+      const mailbox = mailboxes.find(mb => mb.id === selectedMailbox);
+      const accountId = perAccountClient
+        ? undefined
+        : mailbox?.isShared ? mailbox.accountId : undefined;
+
+      const fullEmail = await fetchClient.getEmail(email.id, accountId);
       if (fullEmail) {
+        if (emailAccountId) {
+          fullEmail.accountId = emailAccountId;
+          fullEmail.accountLabel = listEmail?.accountLabel;
+        }
         selectEmail(fullEmail);
         // Mark-as-read logic is now handled by useEffect
       }
@@ -1024,9 +1744,12 @@ export default function Home() {
     }
   };
 
-  // Handle back navigation from viewer on mobile
+  // Handle back navigation from viewer on mobile.
+  // Reset to list state directly. We can't just call window.history.back()
+  // because the nav hook pushes a new entry for every email the user opens,
+  // so history.back() would pop to the previous email rather than the list.
+  // The OS / hardware back button is still wired through popstate → handleNavRestore.
   const handleMobileBack = () => {
-    // If in conversation view, clear it
     if (conversationThread) {
       setConversationThread(null);
       setConversationEmails([]);
@@ -1181,6 +1904,15 @@ export default function Home() {
               onMailboxSelect={handleMailboxSelect}
               onTagSelect={handleTagSelect}
               onUnreadFilterClick={handleUnreadFilterClick}
+              onMarkFolderRead={handleMarkFolderRead}
+              onMarkFolderTreeRead={handleMarkFolderTreeRead}
+              onMarkAllFoldersRead={handleMarkAllFoldersRead}
+              onEmptyFolder={handleEmptyFolderFromContextMenu}
+              onCreateSubfolder={handleCreateSubfolderFromContextMenu}
+              onCreateFolder={handleCreateFolderFromContextMenu}
+              onRenameFolder={handleRenameFolderFromContextMenu}
+              onDeleteFolder={handleDeleteFolderFromContextMenu}
+              onRefreshMailboxes={handleRefreshMailboxes}
               onCompose={() => {
                 setComposerMode('compose');
                 setShowComposer(true);
@@ -1215,11 +1947,12 @@ export default function Home() {
               "max-md:flex-1 max-md:border-r-0",
               isMobile && activeView !== "list" && "max-md:hidden",
               // Tablet/Desktop: fixed width with collapse animation
-              "md:flex-shrink-0 md:shadow-sm",
+              shouldHideViewerPane ? "md:flex-1 md:border-r-0" : "md:flex-shrink-0",
+              "md:shadow-sm",
               !isResizing && "transition-all duration-200 ease-out",
               shouldCollapseListPane && "md:w-0 md:opacity-0 md:overflow-hidden md:border-r-0"
             )}
-            style={!isMobile && !shouldCollapseListPane ? { width: emailListWidth } : undefined}
+            style={!isMobile && !shouldCollapseListPane && !shouldHideViewerPane ? { width: emailListWidth } : undefined}
           >
             {/* Mobile Header for List View */}
             <MobileHeader
@@ -1240,9 +1973,12 @@ export default function Home() {
                         } else {
                           selectAllEmails();
                         }
-                      } else {
-                        // Enter selection mode by selecting the first email
-                        if (emails.length > 0) toggleEmailSelection(emails[0].id);
+                      } else if (emails.length > 0) {
+                        const currentId = selectedEmail?.id;
+                        const target = currentId && emails.some((e) => e.id === currentId)
+                          ? currentId
+                          : emails[0].id;
+                        toggleEmailSelection(target);
                       }
                     }}
                     className={cn(
@@ -1269,6 +2005,8 @@ export default function Home() {
                       className={cn("pl-9 h-9", searchQuery && "pr-8")}
                       data-search-input
                       data-tour="search-input"
+                      disabled={isUnifiedView}
+                      title={isUnifiedView ? t("unified_mailbox.search_unavailable") : undefined}
                     />
                     {searchQuery && (
                       <button
@@ -1284,13 +2022,15 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={toggleAdvancedSearch}
+                    disabled={isUnifiedView}
                     className={cn(
                       "relative flex-shrink-0 p-2 rounded-md transition-colors",
+                      isUnifiedView && "opacity-50 cursor-not-allowed",
                       isAdvancedSearchOpen || activeFilterCount(searchFilters) > 0
                         ? "bg-primary/10 text-primary"
                         : "text-muted-foreground hover:text-foreground hover:bg-muted"
                     )}
-                    title={t("advanced_search.toggle_filters")}
+                    title={isUnifiedView ? t("unified_mailbox.search_unavailable") : t("advanced_search.toggle_filters")}
                   >
                     <Filter className="w-4 h-4" />
                     {!isAdvancedSearchOpen && activeFilterCount(searchFilters) > 0 && (
@@ -1474,8 +2214,7 @@ export default function Home() {
                   }
                 }}
                 onDelete={async (email) => {
-                  selectEmail(email);
-                  await handleDelete();
+                  await handleDelete(email);
                 }}
                 onArchive={async (email) => {
                   await handleArchive(email);
@@ -1489,12 +2228,10 @@ export default function Home() {
                   }
                 }}
                 onMarkAsSpam={async (email) => {
-                  selectEmail(email);
-                  await handleMarkAsSpam();
+                  await handleMarkAsSpam(email);
                 }}
                 onUndoSpam={async (email) => {
-                  selectEmail(email);
-                  await handleUndoSpam();
+                  await handleUndoSpam(email);
                 }}
                 onEditDraft={(email) => {
                   handleEditDraft(email);
@@ -1555,8 +2292,9 @@ export default function Home() {
                 }}
               >
                 <EmailComposer
+                  key={composerSessionId}
                   mode={pendingDraft?.mode ?? composerMode}
-                  replyTo={pendingDraft?.replyTo ?? (selectedEmail ? {
+                  replyTo={pendingDraft !== null ? pendingDraft.replyTo : (selectedEmail ? {
                     from: selectedEmail.from,
                     replyToAddresses: selectedEmail.replyTo,
                     to: selectedEmail.to,
@@ -1565,7 +2303,11 @@ export default function Home() {
                     subject: selectedEmail.subject,
                     body: selectedEmail.bodyValues?.[selectedEmail.textBody?.[0]?.partId || '']?.value || selectedEmail.preview || '',
                     htmlBody: selectedEmail.bodyValues?.[selectedEmail.htmlBody?.[0]?.partId || '']?.value || undefined,
-                    receivedAt: selectedEmail.receivedAt
+                    receivedAt: selectedEmail.receivedAt,
+                    attachments: selectedEmail.attachments,
+                    messageId: selectedEmail.messageId,
+                    inReplyTo: selectedEmail.inReplyTo,
+                    references: selectedEmail.references,
                   } : undefined)}
                   initialDraftText={composerDraftText}
                   initialData={pendingDraft}
@@ -1643,14 +2385,6 @@ export default function Home() {
               />
             ) : (
               <>
-                {/* Mobile Header for Viewer */}
-                {isMobile && activeView === "viewer" && (
-                  <MobileViewerHeader
-                    subject={selectedEmail?.subject}
-                    onBack={handleMobileBack}
-                  />
-                )}
-
                 <ErrorBoundary fallback={EmailViewerErrorFallback}>
                   <EmailViewer
                     email={selectedEmail}
@@ -1658,12 +2392,12 @@ export default function Home() {
                     onReply={handleReply}
                     onReplyAll={handleReplyAll}
                     onForward={handleForward}
-                    onDelete={handleDelete}
+                    onDelete={() => handleDelete()}
                     onArchive={() => handleArchive()}
                     onToggleStar={handleToggleStar}
                     onSetColorTag={handleSetColorTag}
-                    onMarkAsSpam={handleMarkAsSpam}
-                    onUndoSpam={handleUndoSpam}
+                    onMarkAsSpam={() => handleMarkAsSpam()}
+                    onUndoSpam={() => handleUndoSpam()}
                     onMarkAsRead={async (emailId, read) => {
                       if (client) {
                         await markAsRead(client, emailId, read);
@@ -1733,6 +2467,7 @@ export default function Home() {
 
         <SidebarAppsModal isOpen={showAppsModal} onClose={closeAppsModal} />
         <ConfirmDialog {...confirmDialogProps} />
+        <PromptDialog {...promptDialogProps} />
         <TotpReauthDialog />
       </div>
     </DragDropProvider>

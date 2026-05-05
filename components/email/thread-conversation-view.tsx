@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import DOMPurify from "dompurify";
 import { Email, ThreadGroup } from "@/lib/jmap/types";
-import { EMAIL_SANITIZE_CONFIG, collapseBlockedImageContainers } from "@/lib/email-sanitization";
+import { EMAIL_SANITIZE_CONFIG, collapseBlockedImageContainers, plainTextToSafeHtml } from "@/lib/email-sanitization";
 import { hasMeaningfulHtmlBody } from "@/lib/signature-utils";
 import { transformInlineStyles, transformColorForDarkMode, transformBgColorForDarkMode } from "@/lib/color-transform";
 import { useThemeStore } from "@/stores/theme-store";
@@ -31,6 +31,7 @@ import {
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useContactStore } from "@/stores/contact-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { isFilePreviewable } from "@/lib/file-preview";
 
@@ -84,6 +85,10 @@ export function ThreadConversationView({
   const externalContentPolicy = useSettingsStore((state) => state.externalContentPolicy);
   const addTrustedSender = useSettingsStore((state) => state.addTrustedSender);
   const isSenderTrusted = useSettingsStore((state) => state.isSenderTrusted);
+  const trustedSendersAddressBook = useSettingsStore((state) => state.trustedSendersAddressBook);
+  const isTrustedAddressBookSender = useContactStore((state) => state.isTrustedAddressBookSender);
+  const addToTrustedSendersBook = useContactStore((state) => state.addToTrustedSendersBook);
+  const { client } = useAuthStore();
 
   // Track which emails are expanded (most recent by default)
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -164,7 +169,9 @@ export function ThreadConversationView({
         <div className="space-y-3" style={{ padding: 'var(--density-card-p)' }}>
           {emails.map((email, index) => {
             const senderEmail = email.from?.[0]?.email?.toLowerCase();
-            const senderIsTrusted = senderEmail ? isSenderTrusted(senderEmail) : false;
+            const senderIsTrusted = senderEmail
+              ? isSenderTrusted(senderEmail) || (trustedSendersAddressBook && isTrustedAddressBookSender(senderEmail))
+              : false;
             return (
               <EmailCard
                 key={email.id}
@@ -175,7 +182,11 @@ export function ThreadConversationView({
                 onToggleExpanded={() => toggleExpanded(email.id)}
                 onAllowExternal={() => toggleAllowExternal(email.id)}
                 onTrustSender={senderEmail ? () => {
-                  addTrustedSender(senderEmail);
+                  if (trustedSendersAddressBook && client) {
+                    addToTrustedSendersBook(client, senderEmail).catch(console.error);
+                  } else {
+                    addTrustedSender(senderEmail);
+                  }
                   toggleAllowExternal(email.id);
                 } : undefined}
                 onReply={onReply ? () => onReply(email) : undefined}
@@ -226,6 +237,7 @@ function EmailCard({
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
   const density = useSettingsStore((state) => state.density);
   const mailAttachmentAction = useSettingsStore((state) => state.mailAttachmentAction);
+  const hideInlineImageAttachments = useSettingsStore((state) => state.hideInlineImageAttachments);
   const emailAlwaysLightMode = useSettingsStore((state) => state.emailAlwaysLightMode);
   const sender = email.from?.[0];
   const isUnread = !email.keywords?.$seen;
@@ -408,12 +420,7 @@ function EmailCard({
       // Plain text fallback
       if (email.textBody?.[0]?.partId && email.bodyValues[email.textBody[0].partId]) {
         const text = email.bodyValues[email.textBody[0].partId].value;
-        const htmlEscaped = text
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">$1</a>');
-        return { html: htmlEscaped, isHtml: false };
+        return { html: plainTextToSafeHtml(text, 'text-primary hover:underline'), isHtml: false };
       }
     }
 
@@ -538,10 +545,14 @@ function EmailCard({
           </div>
 
           {/* Attachments */}
-          {email.attachments && email.attachments.length > 0 && (
+          {(() => {
+            const visibleAttachments = (email.attachments ?? []).filter(
+              att => !(hideInlineImageAttachments && att.cid && att.disposition === 'inline' && (att.type || '').startsWith('image/'))
+            );
+            return visibleAttachments.length > 0 && (
             <div className="px-4 pb-4">
               <div className="flex flex-wrap gap-2">
-                {email.attachments.map((attachment, idx) => {
+                {visibleAttachments.map((attachment, idx) => {
                   const Icon = getFileIcon(attachment.name, attachment.type);
                   const isPreviewable = isFilePreviewable(attachment.name, attachment.type);
                   const opensPreview = isPreviewable && mailAttachmentAction === 'preview';
@@ -570,7 +581,8 @@ function EmailCard({
                 })}
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Action Buttons */}
           <div className="px-4 pb-4 flex gap-2">

@@ -6,7 +6,7 @@ import { generateDemoId } from './demo-utils';
 
 /**
  * In-memory JMAP client for demo mode.
- * All data lives in memory — no network calls, no cookies.
+ * All data lives in memory - no network calls, no cookies.
  */
 export class DemoJMAPClient implements IJMAPClient {
   private data: DemoData;
@@ -49,6 +49,10 @@ export class DemoJMAPClient implements IJMAPClient {
 
   // ── Capabilities ──────────────────────────────────────────────
 
+  hasAccountCapability(_capability: string, _accountId?: string): boolean {
+    return false;
+  }
+
   getCapabilities(): Record<string, unknown> {
     return {
       'urn:ietf:params:jmap:core': { maxSizeUpload: 50_000_000, maxCallsInRequest: 16, maxObjectsInGet: 500 },
@@ -74,6 +78,10 @@ export class DemoJMAPClient implements IJMAPClient {
   supportsCalendars(): boolean { return true; }
   supportsSieve(): boolean { return true; }
   supportsFiles(): boolean { return true; }
+  supportsPrincipals(): boolean { return false; }
+  async getPrincipals(): Promise<never[]> { return []; }
+  async setCalendarShare(): Promise<void> { /* demo: no-op */ }
+  async setAddressBookShare(): Promise<void> { /* demo: no-op */ }
 
   // ── Push / state ──────────────────────────────────────────────
 
@@ -86,6 +94,18 @@ export class DemoJMAPClient implements IJMAPClient {
   onStateChange(callback: (change: StateChange) => void): void { this.stateChangeCallback = callback; }
   getLastStates(): AccountStates { return { ...this.lastStates }; }
   setLastStates(states: AccountStates): void { this.lastStates = { ...states }; }
+
+  // PushSubscription endpoints have no meaning in demo mode - the demo client
+  // never makes real network calls so there's nothing for the relay to push to.
+  async listPushSubscriptions() { return []; }
+  async createPushSubscription(): Promise<string> {
+    throw new Error('Push subscriptions are not available in demo mode');
+  }
+  async verifyPushSubscription(): Promise<void> {
+    throw new Error('Push subscriptions are not available in demo mode');
+  }
+  async updatePushSubscription(): Promise<boolean> { return false; }
+  async destroyPushSubscription(): Promise<void> { /* no-op */ }
 
   // ── Quota ─────────────────────────────────────────────────────
 
@@ -265,6 +285,35 @@ export class DemoJMAPClient implements IJMAPClient {
     this.recalcMailboxCounts();
   }
 
+  async batchArchiveEmails(
+    emails: Array<{ id: string; receivedAt: string }>,
+    archiveMailboxId: string,
+    mode: 'single' | 'year' | 'month',
+  ): Promise<void> {
+    if (emails.length === 0) return;
+    if (mode === 'single') {
+      await this.batchMoveEmails(emails.map(e => e.id), archiveMailboxId);
+      return;
+    }
+    for (const { id, receivedAt } of emails) {
+      const email = this.data.emails.find(e => e.id === id);
+      if (!email) continue;
+      const d = new Date(receivedAt);
+      const year = d.getFullYear().toString();
+      const month = (d.getMonth() + 1).toString().padStart(2, '0');
+      let yearBox = this.data.mailboxes.find(m => m.name === year && m.parentId === archiveMailboxId);
+      if (!yearBox) yearBox = await this.createMailbox(year, archiveMailboxId);
+      let destId = yearBox.id;
+      if (mode === 'month') {
+        let monthBox = this.data.mailboxes.find(m => m.name === month && m.parentId === yearBox!.id);
+        if (!monthBox) monthBox = await this.createMailbox(month, yearBox.id);
+        destId = monthBox.id;
+      }
+      email.mailboxIds = { [destId]: true };
+    }
+    this.recalcMailboxCounts();
+  }
+
   async moveEmail(emailId: string, toMailboxId: string): Promise<void> {
     const email = this.data.emails.find(e => e.id === emailId);
     if (email) email.mailboxIds = { [toMailboxId]: true };
@@ -277,6 +326,33 @@ export class DemoJMAPClient implements IJMAPClient {
     const removed = before - this.data.emails.length;
     this.recalcMailboxCounts();
     return removed;
+  }
+
+  async markMailboxAsRead(mailboxId: string): Promise<number> {
+    let count = 0;
+    for (const email of this.data.emails) {
+      if (email.mailboxIds[mailboxId] && email.keywords.$seen !== true) {
+        email.keywords.$seen = true;
+        count++;
+      }
+    }
+    this.recalcMailboxCounts();
+    return count;
+  }
+
+  async markAllAsRead(excludeMailboxIds: string[] = []): Promise<number> {
+    const excluded = new Set(excludeMailboxIds);
+    let count = 0;
+    for (const email of this.data.emails) {
+      if (email.keywords.$seen === true) continue;
+      const mbIds = Object.keys(email.mailboxIds);
+      const onlyInExcluded = mbIds.length > 0 && mbIds.every(id => excluded.has(id));
+      if (onlyInExcluded) continue;
+      email.keywords.$seen = true;
+      count++;
+    }
+    this.recalcMailboxCounts();
+    return count;
   }
 
   async markAsSpam(emailId: string): Promise<void> {
@@ -317,8 +393,9 @@ export class DemoJMAPClient implements IJMAPClient {
     _identityId?: string,
     _fromEmail?: string,
     draftId?: string,
-    attachments?: Array<{ blobId: string; name: string; type: string; size: number }>,
+    attachments?: Array<{ blobId: string; name: string; type: string; size: number; disposition?: 'attachment' | 'inline'; cid?: string }>,
     _fromName?: string,
+    htmlBody?: string,
   ): Promise<string> {
     const draftsMb = this.data.mailboxes.find(m => m.role === 'drafts');
     const id = draftId || generateDemoId('email');
@@ -338,9 +415,13 @@ export class DemoJMAPClient implements IJMAPClient {
       sentAt: new Date().toISOString(),
       preview: body.substring(0, 200),
       hasAttachment: !!attachments?.length,
-      textBody: [{ partId: '1', blobId: generateDemoId('blob'), size: body.length, type: 'text/plain' }],
-      htmlBody: [],
-      bodyValues: { '1': { value: body } },
+      textBody: [{ partId: htmlBody ? 'text' : '1', blobId: generateDemoId('blob'), size: body.length, type: 'text/plain' }],
+      htmlBody: htmlBody
+        ? [{ partId: 'html', blobId: generateDemoId('blob'), size: htmlBody.length, type: 'text/html' }]
+        : [],
+      bodyValues: htmlBody
+        ? { text: { value: body }, html: { value: htmlBody } }
+        : { '1': { value: body } },
       attachments: attachments?.map(a => ({ ...a, partId: generateDemoId('part') })),
       messageId: `<${id}@demo.example.com>`,
     };
@@ -365,7 +446,9 @@ export class DemoJMAPClient implements IJMAPClient {
     draftId?: string,
     _fromName?: string,
     htmlBody?: string,
-    attachments?: Array<{ blobId: string; name: string; type: string; size: number }>,
+    attachments?: Array<{ blobId: string; name: string; type: string; size: number; disposition?: 'attachment' | 'inline'; cid?: string }>,
+    inReplyTo?: string[],
+    references?: string[],
   ): Promise<void> {
     // Remove draft if updating
     if (draftId) {
@@ -391,6 +474,8 @@ export class DemoJMAPClient implements IJMAPClient {
       bodyValues: htmlBody ? { '1': { value: body }, '2': { value: htmlBody } } : { '1': { value: body } },
       attachments: attachments?.map(a => ({ ...a, partId: generateDemoId('part') })),
       messageId: `<${generateDemoId('msg')}@demo.example.com>`,
+      inReplyTo: inReplyTo?.length ? inReplyTo : undefined,
+      references: references?.length ? references : undefined,
     };
     this.data.emails.push(email);
     this.recalcMailboxCounts();
@@ -481,6 +566,22 @@ export class DemoJMAPClient implements IJMAPClient {
   async getAddressBooks(): Promise<AddressBook[]> { return [...this.data.addressBooks]; }
   async getAllAddressBooks(): Promise<AddressBook[]> { return [...this.data.addressBooks]; }
 
+  async createAddressBook(name: string): Promise<AddressBook> {
+    const book: AddressBook = { id: `demo-book-${Date.now()}`, name };
+    this.data.addressBooks.push(book);
+    return book;
+  }
+
+  async updateAddressBook(addressBookId: string, updates: Partial<AddressBook>): Promise<void> {
+    const book = this.data.addressBooks.find(b => b.id === addressBookId);
+    if (book) Object.assign(book, updates);
+  }
+
+  async deleteAddressBook(addressBookId: string): Promise<void> {
+    this.data.addressBooks = this.data.addressBooks.filter(b => b.id !== addressBookId);
+    this.data.contacts = this.data.contacts.filter(c => !c.addressBookIds?.[addressBookId]);
+  }
+
   async getContacts(addressBookId?: string): Promise<ContactCard[]> {
     if (addressBookId) return this.data.contacts.filter(c => c.addressBookIds[addressBookId]);
     return [...this.data.contacts];
@@ -538,7 +639,7 @@ export class DemoJMAPClient implements IJMAPClient {
       includeInAvailability: 'all',
       defaultAlertsWithTime: null, defaultAlertsWithoutTime: null,
       timeZone: null, shareWith: null,
-      myRights: { mayReadFreeBusy: true, mayReadItems: true, mayWriteAll: true, mayWriteOwn: true, mayUpdatePrivate: true, mayRSVP: true, mayAdmin: true, mayDelete: true },
+      myRights: { mayReadFreeBusy: true, mayReadItems: true, mayWriteAll: true, mayWriteOwn: true, mayUpdatePrivate: true, mayRSVP: true, mayShare: true, mayDelete: true },
       ...calendar,
     } as Calendar;
     this.data.calendars.push(full);

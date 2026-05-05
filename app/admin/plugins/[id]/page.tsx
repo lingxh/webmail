@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { Puzzle, ArrowLeft, Loader2, Eye, EyeOff } from 'lucide-react';
 import Link from 'next/link';
+import { apiFetch } from '@/lib/browser-navigation';
 
 interface ConfigField {
   type: 'string' | 'secret' | 'boolean' | 'number' | 'select';
@@ -68,8 +69,8 @@ export default function PluginConfigPage() {
     setLoading(true);
     try {
       const [pluginsRes, configRes] = await Promise.all([
-        fetch('/api/admin/plugins'),
-        fetch(`/api/admin/plugins/${encodeURIComponent(pluginId)}/config`),
+        apiFetch('/api/admin/plugins'),
+        apiFetch(`/api/admin/plugins/${encodeURIComponent(pluginId)}/config`),
       ]);
 
       if (pluginsRes.ok) {
@@ -117,7 +118,7 @@ export default function PluginConfigPage() {
 
         // Delete if clearing a non-required field
         if (!newVal && !field.required) {
-          const res = await fetch(`/api/admin/plugins/${encodeURIComponent(pluginId)}/config`, {
+          const res = await apiFetch(`/api/admin/plugins/${encodeURIComponent(pluginId)}/config`, {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ key }),
@@ -130,7 +131,7 @@ export default function PluginConfigPage() {
           continue;
         }
 
-        const res = await fetch(`/api/admin/plugins/${encodeURIComponent(pluginId)}/config`, {
+        const res = await apiFetch(`/api/admin/plugins/${encodeURIComponent(pluginId)}/config`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key, value }),
@@ -230,7 +231,7 @@ export default function PluginConfigPage() {
                     onChange={(e) => setFormValues(prev => ({ ...prev, [key]: e.target.value }))}
                     className="w-full h-9 px-3 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   >
-                    <option value="">— Select —</option>
+                    <option value="">- Select -</option>
                     {field.options.map(opt => (
                       <option key={opt.value} value={opt.value}>{opt.label}</option>
                     ))}

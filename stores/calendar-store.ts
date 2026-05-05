@@ -1,12 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { IJMAPClient } from '@/lib/jmap/client-interface';
-import type { Calendar, CalendarEvent, CalendarParticipant } from '@/lib/jmap/types';
+import type { Calendar, CalendarEvent, CalendarParticipant, CalendarRights } from '@/lib/jmap/types';
 import { debug } from '@/lib/debug';
 import { normalizeAllDayDuration } from '@/lib/calendar-utils';
+import { parseDuration } from '@/components/calendar/event-card';
 import { sanitizeOutgoingCalendarEventData } from '@/lib/calendar-event-normalization';
 import { expandRecurringEvents } from '@/lib/recurrence-expansion';
 import { generateUUID } from '@/lib/utils';
+import { apiFetch } from '@/lib/browser-navigation';
+import { BIRTHDAY_CALENDAR_ID } from '@/lib/birthday-calendar';
 
 export type CalendarViewMode = 'month' | 'week' | 'day' | 'agenda' | 'tasks';
 
@@ -122,6 +125,7 @@ interface CalendarStore {
   rsvpEvent: (client: IJMAPClient, eventId: string, participantId: string, status: string, replyTo?: Record<string, string> | null) => Promise<void>;
   importEvents: (client: IJMAPClient, events: Partial<CalendarEvent>[], calendarId: string) => Promise<number>;
   updateCalendar: (client: IJMAPClient, calendarId: string, updates: Partial<Calendar>) => Promise<void>;
+  shareCalendar: (client: IJMAPClient, calendarId: string, principalId: string, rights: CalendarRights | null) => Promise<void>;
   createCalendar: (client: IJMAPClient, calendar: Partial<Calendar>) => Promise<Calendar | null>;
   removeCalendar: (client: IJMAPClient, calendarId: string) => Promise<void>;
   clearCalendarEvents: (client: IJMAPClient, calendarId: string) => Promise<number>;
@@ -173,7 +177,7 @@ export const useCalendarStore = create<CalendarStore>()(
           const calendars = await client.getAllCalendars();
           const { selectedCalendarIds } = get();
           const validIds = calendars.map(c => c.id);
-          const stillValid = selectedCalendarIds.filter(id => validIds.includes(id));
+          const stillValid = selectedCalendarIds.filter(id => validIds.includes(id) || id === BIRTHDAY_CALENDAR_ID);
           set({
             calendars,
             isLoading: false,
@@ -287,6 +291,13 @@ export const useCalendarStore = create<CalendarStore>()(
           }
 
           set((state) => ({ events: [...state.events, mappedCreated] }));
+          if (sendSchedulingMessages && created.participants) {
+            try {
+              await client.sendImipInvitation(created);
+            } catch (e) {
+              debug.error('Failed to send invitation emails:', e);
+            }
+          }
           return mappedCreated;
         } catch (error) {
           debug.error('Failed to create event:', error);
@@ -338,9 +349,33 @@ export const useCalendarStore = create<CalendarStore>()(
                   }
                 }
               }
+              // When duration changes (e.g. resize), recompute utcEnd so the event
+              // renders with the new length immediately without waiting for refresh.
+              if (cleanUpdates.duration !== undefined && merged.utcStart) {
+                const durationMinutes = parseDuration(cleanUpdates.duration);
+                merged.utcEnd = new Date(
+                  new Date(merged.utcStart).getTime() + durationMinutes * 60000,
+                ).toISOString();
+              }
               return merged;
             }),
           }));
+          if (sendSchedulingMessages) {
+            const mergedParticipants = cleanUpdates.participants ?? storeEvent?.participants;
+            if (mergedParticipants) {
+              const eventForInvitation = {
+                ...(storeEvent ?? {}),
+                ...cleanUpdates,
+                id: realId,
+                participants: mergedParticipants,
+              } as import('@/lib/jmap/types').CalendarEvent;
+              try {
+                await client.sendImipInvitation(eventForInvitation);
+              } catch (e) {
+                debug.error('Failed to send invitation emails:', e);
+              }
+            }
+          }
         } catch (error) {
           debug.error('Failed to update event:', error);
           set({ error: 'Failed to update event' });
@@ -350,7 +385,7 @@ export const useCalendarStore = create<CalendarStore>()(
 
       rsvpEvent: async (client, eventId, participantId, status, replyTo) => {
         set({ error: null });
-        // JMAP participant IDs are opaque strings — they can contain @, ., :, / etc.
+        // JMAP participant IDs are opaque strings - they can contain @, ., :, / etc.
         // Only reject empty or obviously malicious values (path traversal).
         if (!participantId || participantId.includes('..')) {
           set({ error: 'Invalid participant ID' });
@@ -424,15 +459,15 @@ export const useCalendarStore = create<CalendarStore>()(
 
           for (const e of eventsToProcess) {
             if (!e.uid || !uidToEvent.has(e.uid)) {
-              // UID doesn't exist on server — create it
+              // UID doesn't exist on server - create it
               newEvents.push(e);
             } else {
               const existing = uidToEvent.get(e.uid)!;
               if (existing.calendarIds[realCalendarId]) {
-                // Already in target calendar — skip
+                // Already in target calendar - skip
                 continue;
               }
-              // Exists in another calendar — link to target calendar
+              // Exists in another calendar - link to target calendar
               eventsToLink.push({
                 eventId: existing.id,
                 calendarIds: { ...existing.calendarIds, [realCalendarId]: true },
@@ -615,6 +650,29 @@ export const useCalendarStore = create<CalendarStore>()(
         } catch (error) {
           debug.error('Failed to update calendar:', error);
           set({ error: 'Failed to update calendar' });
+          throw error;
+        }
+      },
+
+      shareCalendar: async (client, calendarId, principalId, rights) => {
+        set({ error: null });
+        try {
+          const cal = get().calendars.find(c => c.id === calendarId);
+          const realId = cal?.originalId || calendarId;
+          const targetAccountId = cal?.accountId;
+          await client.setCalendarShare(realId, principalId, rights, targetAccountId);
+          set((state) => ({
+            calendars: state.calendars.map(c => {
+              if (c.id !== calendarId) return c;
+              const next = { ...(c.shareWith ?? {}) };
+              if (rights === null) delete next[principalId];
+              else next[principalId] = rights;
+              return { ...c, shareWith: next };
+            }),
+          }));
+        } catch (error) {
+          debug.error('Failed to share calendar:', error);
+          set({ error: 'Failed to share calendar' });
           throw error;
         }
       },
@@ -809,7 +867,7 @@ export const useCalendarStore = create<CalendarStore>()(
         if (!sub) return;
 
         try {
-          const response = await fetch('/api/fetch-ical', {
+          const response = await apiFetch('/api/fetch-ical', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: sub.url }),

@@ -8,6 +8,14 @@ services:
       - PORT=3000
     env_file:
       - .env.local
+    volumes:
+      # Encrypted user settings (SETTINGS_DATA_DIR).
+      - bulwark-settings:/app/data/settings
+      # Admin dashboard state: config, password hash, plugins, audit logs (ADMIN_DATA_DIR).
+      - bulwark-admin:/app/data/admin
+      # Anonymous telemetry: instance id, consent state, login HMACs (TELEMETRY_DATA_DIR).
+      # Persisting this preserves the admin's consent choice and stable instance id across upgrades.
+      - bulwark-telemetry:/app/data/telemetry
     healthcheck:
       test:
         [
@@ -23,3 +31,8 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+
+volumes:
+  bulwark-settings:
+  bulwark-admin:
+  bulwark-telemetry:

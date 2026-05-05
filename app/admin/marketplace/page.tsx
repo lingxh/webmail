@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Search, Download, Check, Loader2, Store, Puzzle, SwatchBook, Star, Filter } from 'lucide-react';
+import Link from 'next/link';
+import { Search, Download, Check, Loader2, Store, Puzzle, SwatchBook, Star, Eye } from 'lucide-react';
+import { apiFetch } from '@/lib/browser-navigation';
 
 interface Extension {
   slug: string;
@@ -57,7 +59,7 @@ export default function AdminMarketplacePage() {
       params.set('perPage', String(perPage));
       params.set('sort', 'newest');
 
-      const res = await fetch(`/api/admin/marketplace?${params}`);
+      const res = await apiFetch(`/api/admin/marketplace?${params}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data.error || 'Failed to connect to extension directory');
@@ -95,7 +97,7 @@ export default function AdminMarketplacePage() {
     setMessage(null);
 
     try {
-      const res = await fetch('/api/admin/marketplace', {
+      const res = await apiFetch('/api/admin/marketplace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -116,7 +118,7 @@ export default function AdminMarketplacePage() {
         setMessage({ type: 'error', text: data.error || 'Installation failed' });
       }
     } catch {
-      setMessage({ type: 'error', text: 'Installation failed — network error' });
+      setMessage({ type: 'error', text: 'Installation failed - network error' });
     } finally {
       setInstalling(null);
     }
@@ -140,8 +142,8 @@ export default function AdminMarketplacePage() {
       )}
 
       {/* Search & Filters */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="relative flex-1 min-w-0">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
@@ -151,7 +153,7 @@ export default function AdminMarketplacePage() {
             className="w-full h-9 pl-9 pr-3 rounded-md border border-input bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-ring"
           />
         </div>
-        <div className="flex items-center gap-1 rounded-md border border-input bg-background p-0.5">
+        <div className="flex items-center gap-1 rounded-md border border-input bg-background p-0.5 self-start sm:self-auto">
           {(['all', 'plugin', 'theme'] as const).map((t) => (
             <button
               key={t}
@@ -261,10 +263,11 @@ function ExtensionCard({
   onInstall: () => void;
 }) {
   const isPlugin = extension.type === 'plugin';
+  const previewHref = `/admin/marketplace/${encodeURIComponent(extension.slug)}`;
 
   return (
-    <div className="border border-border rounded-lg overflow-hidden hover:border-ring/30 transition-colors">
-      <div className="p-4">
+    <div className="group relative border border-border rounded-lg overflow-hidden hover:border-ring/30 transition-colors">
+      <Link href={previewHref} className="block p-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 rounded-lg">
         {/* Header */}
         <div className="flex items-start gap-3">
           <div className="w-10 h-10 rounded-md bg-muted flex items-center justify-center shrink-0">
@@ -276,7 +279,9 @@ function ExtensionCard({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <span className="text-sm font-medium text-foreground truncate">{extension.name}</span>
+              <span className="text-sm font-medium text-foreground truncate group-hover:underline">
+                {extension.name}
+              </span>
               {extension.featured && (
                 <Star className="w-3.5 h-3.5 text-warning shrink-0 fill-warning" />
               )}
@@ -314,7 +319,7 @@ function ExtensionCard({
           </div>
         )}
 
-        {/* Footer */}
+        {/* Footer (download count + permissions) */}
         <div className="flex items-center justify-between mt-4 pt-3 border-t border-border">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
@@ -327,27 +332,34 @@ function ExtensionCard({
               </span>
             )}
           </div>
-
-          {extension.installed ? (
-            <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 text-xs font-medium">
-              <Check className="w-3 h-3" />
-              Installed
-            </span>
-          ) : (
-            <button
-              onClick={onInstall}
-              disabled={installing}
-              className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
-            >
-              {installing ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Download className="w-3 h-3" />
-              )}
-              Install
-            </button>
-          )}
+          <span className="inline-flex items-center gap-1 text-xs text-muted-foreground group-hover:text-foreground">
+            <Eye className="w-3 h-3" />
+            Preview
+          </span>
         </div>
+      </Link>
+
+      {/* Quick install button (sits over the link, stops navigation) */}
+      <div className="px-4 pb-4 -mt-1">
+        {extension.installed ? (
+          <span className="inline-flex items-center gap-1 h-7 px-2.5 rounded-md bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 text-xs font-medium">
+            <Check className="w-3 h-3" />
+            Installed
+          </span>
+        ) : (
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onInstall(); }}
+            disabled={installing}
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 disabled:opacity-50 transition-colors"
+          >
+            {installing ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Download className="w-3 h-3" />
+            )}
+            Quick install
+          </button>
+        )}
       </div>
     </div>
   );

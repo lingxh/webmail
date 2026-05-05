@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { NextIntlClientProvider } from 'next-intl';
 import { useLocaleStore } from '@/stores/locale-store';
+import csMessages from '@/locales/cs/common.json';
 import enMessages from '@/locales/en/common.json';
 import frMessages from '@/locales/fr/common.json';
 import jaMessages from '@/locales/ja/common.json';
@@ -10,14 +11,18 @@ import koMessages from '@/locales/ko/common.json';
 import esMessages from '@/locales/es/common.json';
 import itMessages from '@/locales/it/common.json';
 import deMessages from '@/locales/de/common.json';
+import lvMessages from '@/locales/lv/common.json';
 import nlMessages from '@/locales/nl/common.json';
 import plMessages from '@/locales/pl/common.json';
 import ptMessages from '@/locales/pt/common.json';
 import ruMessages from '@/locales/ru/common.json';
+import trMessages from '@/locales/tr/common.json';
+import ukMessages from '@/locales/uk/common.json';
 import zhMessages from '@/locales/zh/common.json';
 
 // Pre-loaded translations (loaded at build time, not runtime)
 const ALL_MESSAGES = {
+  cs: csMessages,
   en: enMessages,
   fr: frMessages,
   ja: jaMessages,
@@ -25,10 +30,13 @@ const ALL_MESSAGES = {
   es: esMessages,
   it: itMessages,
   de: deMessages,
+  lv: lvMessages,
   nl: nlMessages,
   pl: plMessages,
   pt: ptMessages,
   ru: ruMessages,
+  tr: trMessages,
+  uk: ukMessages,
   zh: zhMessages,
 };
 

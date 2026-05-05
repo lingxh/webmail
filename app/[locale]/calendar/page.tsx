@@ -29,6 +29,11 @@ import { MiniCalendar } from "@/components/calendar/mini-calendar";
 import { CalendarSidebarPanel } from "@/components/calendar/calendar-sidebar-panel";
 import { EventModal, type PendingEventPreview } from "@/components/calendar/event-modal";
 import { EventDetailPopover } from "@/components/calendar/event-detail-popover";
+import { EventContextMenu } from "@/components/calendar/event-context-menu";
+import { EmptySpaceContextMenu } from "@/components/calendar/empty-space-context-menu";
+import { useContextMenu } from "@/hooks/use-context-menu";
+import { useRefreshGesture } from "@/hooks/use-refresh-gesture";
+import { downloadEventICS } from "@/lib/calendar-ics-export";
 import { ICalImportModal } from "@/components/calendar/ical-import-modal";
 import { ICalSubscriptionModal } from "@/components/calendar/ical-subscription-modal";
 import { RecurrenceScopeDialog, type RecurrenceEditScope } from "@/components/calendar/recurrence-scope-dialog";
@@ -42,7 +47,11 @@ import { getEventStartDate } from "@/lib/calendar-utils";
 import { useTaskStore } from "@/stores/task-store";
 import { useContactStore } from "@/stores/contact-store";
 import { cn } from "@/lib/utils";
-import type { CalendarEvent, CalendarParticipant } from "@/lib/jmap/types";
+import type { Calendar, CalendarEvent, CalendarParticipant, CalendarRights } from "@/lib/jmap/types";
+import { ShareCollectionDialog } from "@/components/settings/share-collection-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
+import { CreateCalendarModal } from "@/components/calendar/create-calendar-modal";
 import { getUserParticipantId } from "@/lib/calendar-participants";
 import { generateBirthdayEvents, createBirthdayCalendar, BIRTHDAY_CALENDAR_ID } from "@/lib/birthday-calendar";
 import { debug } from "@/lib/debug";
@@ -70,7 +79,8 @@ export default function CalendarPage() {
     calendars, events, selectedDate, viewMode, selectedCalendarIds,
     isLoading, isLoadingEvents, supportsCalendar, error,
     fetchCalendars, fetchEvents, createEvent, updateEvent, deleteEvent, rsvpEvent,
-    setSelectedDate, setViewMode, toggleCalendarVisibility, updateCalendar,
+    setSelectedDate, setViewMode, toggleCalendarVisibility, updateCalendar, shareCalendar,
+    removeCalendar, clearCalendarEvents,
     refreshAllSubscriptions, icalSubscriptions,
   } = useCalendarStore();
   const { firstDayOfWeek, timeFormat, showWeekNumbers, enableCalendarTasks, showTasksOnCalendar, calendarHoverPreview, showBirthdayCalendar, birthdayCalendarColor, updateSetting } = useSettingsStore();
@@ -89,9 +99,15 @@ export default function CalendarPage() {
   const [showImportModal, setShowImportModal] = useState(false);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [editingSubscription, setEditingSubscription] = useState<string | null>(null);
+  const [sharingCalendarId, setSharingCalendarId] = useState<string | null>(null);
+  const [defaultCalendarIdForCreate, setDefaultCalendarIdForCreate] = useState<string | undefined>(undefined);
+  const [showCreateCalendar, setShowCreateCalendar] = useState(false);
+  const { dialogProps: confirmDialogProps, confirm: confirmAction } = useConfirmDialog();
+  const tMgmt = useTranslations("calendar.management");
   const [editEvent, setEditEvent] = useState<CalendarEvent | null>(null);
   const [defaultModalDate, setDefaultModalDate] = useState<Date | undefined>();
   const [defaultModalEndDate, setDefaultModalEndDate] = useState<Date | undefined>();
+  const [defaultModalAllDay, setDefaultModalAllDay] = useState(false);
   const [miniMonth, setMiniMonth] = useState(new Date());
   const [pendingScopeAction, setPendingScopeAction] = useState<PendingScopeAction | null>(null);
   const [detailEvent, setDetailEvent] = useState<CalendarEvent | null>(null);
@@ -114,14 +130,25 @@ export default function CalendarPage() {
   // Swipe navigation ref (handlers defined after navigatePrev/navigateNext)
   const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
 
-  // Check auth on mount
+  // Keep detailEvent in sync with store events (e.g. after update + refetch)
   useEffect(() => {
-    const { isAuthenticated: hydratedAuthenticated, client: hydratedClient } = useAuthStore.getState();
-    if (hydratedAuthenticated && hydratedClient) {
+    if (detailEvent) {
+      const updated = events.find(e => e.id === detailEvent.id);
+      if (updated && updated !== detailEvent) {
+        setDetailEvent(updated);
+      }
+    }
+  }, [events, detailEvent]);
+
+  // Check auth on mount – skip when already authenticated so that navigating
+  // between routes doesn't retrigger checkAuth's transient `{ client: null,
+  // isLoading: true }` reset, which was flashing the spinner on every nav.
+  useEffect(() => {
+    const state = useAuthStore.getState();
+    if (state.isAuthenticated && state.client) {
       setInitialCheckDone(true);
       return;
     }
-
     checkAuth().finally(() => {
       setInitialCheckDone(true);
     });
@@ -159,9 +186,14 @@ export default function CalendarPage() {
     return () => clearInterval(interval);
   }, [client, refreshAllSubscriptions]);
 
-  // Auto-add birthday calendar to selected IDs when enabled
+  // Auto-add birthday calendar to selected IDs only when the setting flips
+  // off→on. Firing on every mount would undo a user's manual hide via the
+  // sidebar each time they navigate back to the calendar (see #204).
+  const prevShowBirthdayRef = useRef(showBirthdayCalendar);
   useEffect(() => {
-    if (showBirthdayCalendar && !selectedCalendarIds.includes(BIRTHDAY_CALENDAR_ID)) {
+    const wasShown = prevShowBirthdayRef.current;
+    prevShowBirthdayRef.current = showBirthdayCalendar;
+    if (!wasShown && showBirthdayCalendar && !selectedCalendarIds.includes(BIRTHDAY_CALENDAR_ID)) {
       toggleCalendarVisibility(BIRTHDAY_CALENDAR_ID);
     }
   }, [showBirthdayCalendar]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -298,11 +330,12 @@ export default function CalendarPage() {
     setSelectedDate(date);
   }, [setSelectedDate]);
 
-  const openCreateModal = useCallback((date?: Date, endDate?: Date) => {
+  const openCreateModal = useCallback((date?: Date, endDate?: Date, allDay?: boolean) => {
     setEditEvent(null);
     const d = date || selectedDate;
     setDefaultModalDate(d);
     setDefaultModalEndDate(endDate);
+    setDefaultModalAllDay(allDay ?? false);
     setSelectedDate(d);
     setShowEventModal(true);
   }, [selectedDate, setSelectedDate]);
@@ -354,6 +387,33 @@ export default function CalendarPage() {
     closeDetail();
     openEditModal(event);
   }, [closeDetail, openEditModal]);
+
+  const {
+    contextMenu: eventContextMenu,
+    openContextMenu: openEventContextMenu,
+    closeContextMenu: closeEventContextMenu,
+    menuRef: eventContextMenuRef,
+  } = useContextMenu<CalendarEvent>();
+
+  const handleContextMenuEvent = useCallback((e: React.MouseEvent, event: CalendarEvent) => {
+    closeDetail();
+    openEventContextMenu(e, event);
+  }, [closeDetail, openEventContextMenu]);
+
+  const {
+    contextMenu: emptyContextMenu,
+    openContextMenu: openEmptyContextMenu,
+    closeContextMenu: closeEmptyContextMenu,
+    menuRef: emptyContextMenuRef,
+  } = useContextMenu<{ date: Date; hour?: number; allDayArea?: boolean }>();
+
+  const handleContextMenuEmpty = useCallback(
+    (e: React.MouseEvent, date: Date, hour?: number, allDayArea?: boolean) => {
+      closeDetail();
+      openEmptyContextMenu(e, { date, hour, allDayArea });
+    },
+    [closeDetail, openEmptyContextMenu],
+  );
 
   const handleHoverEvent = useCallback((event: CalendarEvent, anchorRect: DOMRect) => {
     if (isMobile) return;
@@ -414,6 +474,20 @@ export default function CalendarPage() {
       await fetchEvents(client, currentRange.start, currentRange.end);
     }
   }, [client, fetchEvents]);
+
+  // Intercept browser refresh gestures (F5, Ctrl/Cmd+R, pull-to-refresh)
+  // and refresh calendar data via JMAP instead of reloading the page.
+  useRefreshGesture({
+    enabled: isAuthenticated && !!client,
+    onRefresh: async () => {
+      if (!client) return;
+      await Promise.all([
+        fetchCalendars(client),
+        refetchCurrentRange(),
+        refreshAllSubscriptions(client),
+      ]);
+    },
+  });
 
   const focusCalendarOnEvent = useCallback((event: Pick<Partial<CalendarEvent>, "start" | "utcStart" | "showWithoutTime">) => {
     if (!event.start) {
@@ -730,6 +804,73 @@ export default function CalendarPage() {
     }
   }, [detailEvent, client, updateEvent, t]);
 
+  const handleDuplicateContextMenu = useCallback(async (event: CalendarEvent) => {
+    if (!client) { toast.error(t("notifications.event_error")); return; }
+    const start = parseISO(event.start);
+    const newStart = addDays(start, 1);
+    const data = sanitizeOutgoingCalendarEventData<Partial<CalendarEvent>>({
+      title: event.title,
+      description: event.description,
+      start: format(newStart, "yyyy-MM-dd'T'HH:mm:ss"),
+      duration: event.duration,
+      timeZone: event.timeZone,
+      showWithoutTime: event.showWithoutTime,
+      calendarIds: { ...event.calendarIds },
+      status: "confirmed",
+      freeBusyStatus: event.freeBusyStatus,
+      privacy: event.privacy,
+    });
+    if (event.locations) data.locations = structuredClone(event.locations);
+    if (event.recurrenceRules) data.recurrenceRules = structuredClone(event.recurrenceRules);
+    if (event.alerts) data.alerts = structuredClone(event.alerts);
+    if (event.participants) data.participants = structuredClone(event.participants);
+    try {
+      const created = await createEvent(client, data);
+      if (created) {
+        toast.success(t("notifications.event_duplicated"));
+        openEditModal(created);
+      }
+    } catch {
+      toast.error(t("notifications.event_error"));
+    }
+  }, [client, createEvent, openEditModal, t]);
+
+  const handleExportICS = useCallback((event: CalendarEvent) => {
+    try {
+      downloadEventICS(event);
+      toast.success(t("notifications.event_exported"));
+    } catch {
+      toast.error(t("notifications.event_error"));
+    }
+  }, [t]);
+
+  const handleCopyTitle = useCallback(async (event: CalendarEvent) => {
+    try {
+      await navigator.clipboard.writeText(event.title || "");
+      toast.success(t("notifications.title_copied"));
+    } catch {
+      toast.error(t("notifications.event_error"));
+    }
+  }, [t]);
+
+  const handleCopyMeetingLink = useCallback(async (event: CalendarEvent) => {
+    const uri = event.virtualLocations
+      ? Object.values(event.virtualLocations).find((v) => v.uri)?.uri
+      : undefined;
+    if (!uri) return;
+    try {
+      await navigator.clipboard.writeText(uri);
+      toast.success(t("notifications.link_copied"));
+    } catch {
+      toast.error(t("notifications.event_error"));
+    }
+  }, [t]);
+
+  const handleDeleteContextMenu = useCallback((event: CalendarEvent) => {
+    const hasParticipants = event.participants && Object.keys(event.participants).length > 0;
+    handleDeleteEvent(event.id, hasParticipants || undefined);
+  }, [handleDeleteEvent]);
+
   const handleRsvpFromDetail = useCallback(async (status: CalendarParticipant['participationStatus']) => {
     if (!detailEvent || !client) return;
     const participantId = getUserParticipantId(detailEvent, currentUserEmails);
@@ -839,6 +980,8 @@ export default function CalendarPage() {
               onSelectEvent={handleSelectEvent}
               onHoverEvent={handleHoverEvent}
               onHoverLeave={handleHoverLeave}
+              onContextMenuEvent={handleContextMenuEvent}
+              onContextMenuEmpty={handleContextMenuEmpty}
               onCreateAtTime={openCreateModal}
               firstDayOfWeek={firstDayOfWeek}
               isMobile={isMobile}
@@ -855,6 +998,8 @@ export default function CalendarPage() {
               onSelectEvent={handleSelectEvent}
               onHoverEvent={handleHoverEvent}
               onHoverLeave={handleHoverLeave}
+              onContextMenuEvent={handleContextMenuEvent}
+              onContextMenuEmpty={handleContextMenuEmpty}
               onCreateAtTime={openCreateModal}
               firstDayOfWeek={firstDayOfWeek}
               timeFormat={timeFormat}
@@ -873,6 +1018,8 @@ export default function CalendarPage() {
               onSelectEvent={handleSelectEvent}
               onHoverEvent={handleHoverEvent}
               onHoverLeave={handleHoverLeave}
+              onContextMenuEvent={handleContextMenuEvent}
+              onContextMenuEmpty={handleContextMenuEmpty}
               onCreateAtTime={openCreateModal}
               timeFormat={timeFormat}
               isMobile={isMobile}
@@ -890,6 +1037,7 @@ export default function CalendarPage() {
               onSelectEvent={handleSelectEvent}
               onHoverEvent={handleHoverEvent}
               onHoverLeave={handleHoverLeave}
+              onContextMenuEvent={handleContextMenuEvent}
               timeFormat={timeFormat}
             />
           );
@@ -987,6 +1135,42 @@ export default function CalendarPage() {
                 }
                 updateCalendar(client, calendarId, { color });
               } : undefined}
+              onShareCalendar={client ? (cal) => setSharingCalendarId(cal.id) : undefined}
+              onCreateEvent={(cal: Calendar) => {
+                setDefaultCalendarIdForCreate(cal.id);
+                openCreateModal();
+              }}
+              onClearCalendar={client ? async (cal: Calendar) => {
+                const ok = await confirmAction({
+                  title: tMgmt("clear_events"),
+                  message: tMgmt("confirm_clear", { name: cal.name }),
+                  variant: "destructive",
+                  confirmText: tMgmt("clear_events"),
+                });
+                if (!ok) return;
+                try {
+                  const count = await clearCalendarEvents(client, cal.id);
+                  toast.success(tMgmt("events_cleared", { count }));
+                } catch {
+                  toast.error(tMgmt("error_clear"));
+                }
+              } : undefined}
+              onDeleteCalendar={client ? async (cal: Calendar) => {
+                const ok = await confirmAction({
+                  title: tMgmt("delete"),
+                  message: tMgmt("confirm_delete", { name: cal.name }),
+                  variant: "destructive",
+                  confirmText: tMgmt("delete"),
+                });
+                if (!ok) return;
+                try {
+                  await removeCalendar(client, cal.id);
+                  toast.success(tMgmt("calendar_deleted"));
+                } catch {
+                  toast.error(tMgmt("error_delete"));
+                }
+              } : undefined}
+              onCreateCalendar={client ? () => setShowCreateCalendar(true) : undefined}
               onSubscribe={() => setShowSubscriptionModal(true)}
               onEditSubscription={(subId) => setEditingSubscription(subId)}
               client={client}
@@ -1106,6 +1290,54 @@ export default function CalendarPage() {
         </div>
       )}
 
+      {eventContextMenu.data && (
+        <EventContextMenu
+          event={eventContextMenu.data}
+          position={eventContextMenu.position}
+          isOpen={eventContextMenu.isOpen}
+          onClose={closeEventContextMenu}
+          menuRef={eventContextMenuRef}
+          onEdit={() => openEditModal(eventContextMenu.data!)}
+          onDuplicate={() => handleDuplicateContextMenu(eventContextMenu.data!)}
+          onExportICS={() => handleExportICS(eventContextMenu.data!)}
+          onCopyTitle={() => handleCopyTitle(eventContextMenu.data!)}
+          onCopyMeetingLink={() => handleCopyMeetingLink(eventContextMenu.data!)}
+          onDelete={() => handleDeleteContextMenu(eventContextMenu.data!)}
+        />
+      )}
+
+      {emptyContextMenu.data && (() => {
+        const { date, hour } = emptyContextMenu.data;
+        return (
+          <EmptySpaceContextMenu
+            position={emptyContextMenu.position}
+            isOpen={emptyContextMenu.isOpen}
+            onClose={closeEmptyContextMenu}
+            menuRef={emptyContextMenuRef}
+            onNewEvent={() => {
+              const d = new Date(date);
+              if (typeof hour === "number") {
+                d.setHours(hour, 0, 0, 0);
+              } else {
+                const now = new Date();
+                d.setHours(now.getHours() + 1, 0, 0, 0);
+              }
+              openCreateModal(d);
+            }}
+            onNewAllDayEvent={() => {
+              const d = new Date(date);
+              d.setHours(0, 0, 0, 0);
+              openCreateModal(d, undefined, true);
+            }}
+            onNewTask={enableCalendarTasks ? () => {
+              setEditTask(null);
+              setShowTaskModal(true);
+            } : undefined}
+            onGoToToday={goToToday}
+          />
+        );
+      })()}
+
       {detailEvent && detailAnchorRect && (
         <EventDetailPopover
           event={detailEvent}
@@ -1132,11 +1364,13 @@ export default function CalendarPage() {
           calendars={calendars}
           defaultDate={defaultModalDate}
           defaultEndDate={defaultModalEndDate}
+          defaultAllDay={defaultModalAllDay}
+          defaultCalendarId={defaultCalendarIdForCreate}
           onSave={handleSaveEvent}
           onDelete={handleDeleteEvent}
           onDuplicate={handleDuplicateEvent}
           onRsvp={handleRsvp}
-          onClose={() => { setShowEventModal(false); setEditEvent(null); }}
+          onClose={() => { setShowEventModal(false); setEditEvent(null); setDefaultCalendarIdForCreate(undefined); setDefaultModalAllDay(false); }}
           currentUserEmails={currentUserEmails}
           isMobile={true}
         />
@@ -1176,6 +1410,33 @@ export default function CalendarPage() {
         onSelect={handleScopeSelect}
         onClose={() => setPendingScopeAction(null)}
       />
+
+      <ConfirmDialog {...confirmDialogProps} />
+
+      {showCreateCalendar && client && (
+        <CreateCalendarModal
+          client={client}
+          onClose={() => setShowCreateCalendar(false)}
+        />
+      )}
+
+      {sharingCalendarId && client && (() => {
+        const cal = allCalendars.find((c) => c.id === sharingCalendarId);
+        if (!cal) return null;
+        return (
+          <ShareCollectionDialog
+            client={client}
+            kind="calendar"
+            collectionName={cal.name}
+            shareWith={cal.shareWith}
+            ownAccountId={client.getAccountId()}
+            onShare={async (principalId, rights) => {
+              await shareCalendar(client, cal.id, principalId, rights as CalendarRights | null);
+            }}
+            onClose={() => setSharingCalendarId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

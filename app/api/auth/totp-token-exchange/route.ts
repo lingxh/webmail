@@ -4,6 +4,10 @@ import { logger } from '@/lib/logger';
 import { discoverOAuth } from '@/lib/oauth/discovery';
 import { refreshTokenCookieName } from '@/lib/oauth/tokens';
 import { getCookieOptions } from '@/lib/oauth/cookie-config';
+import { readFileEnv } from '@/lib/read-file-env';
+import { configManager } from '@/lib/admin/config-manager';
+import { isPublicHttpUrl } from '@/lib/security/url-guard';
+import { recordLogin } from '@/lib/telemetry/login-tracker';
 
 /**
  * Exchange basic auth credentials (with TOTP appended) for OAuth tokens.
@@ -65,7 +69,7 @@ async function findTokenEndpoint(serverUrl: string): Promise<string | null> {
         return url;
       }
     } catch {
-      // Network error — endpoint not reachable
+      // Network error - endpoint not reachable
     }
   }
 
@@ -82,22 +86,39 @@ export async function POST(request: NextRequest) {
 
     const slot = typeof bodySlot === 'number' && bodySlot >= 0 && bodySlot <= 4 ? bodySlot : 0;
 
-    // Use the server-side JMAP_SERVER_URL if set (may differ from the
-    // public URL the browser uses, e.g. inside Docker).
-    const internalServerUrl = process.env.JMAP_SERVER_URL || process.env.NEXT_PUBLIC_JMAP_SERVER_URL || serverUrl;
+    // Pin the upstream URL to the configured JMAP server so an unauthenticated
+    // caller cannot point this route at internal hosts. Only when no server
+    // URL is configured (and the deployment explicitly allows custom JMAP
+    // endpoints) do we fall back to the user-supplied URL - and even then
+    // it must resolve to a public address.
+    await configManager.ensureLoaded();
+    const configuredServerUrl =
+      configManager.get<string>('jmapServerUrl', '') ||
+      process.env.JMAP_SERVER_URL ||
+      process.env.NEXT_PUBLIC_JMAP_SERVER_URL ||
+      '';
+    const allowCustomEndpoint = configManager.get<boolean>('allowCustomJmapEndpoint', false);
 
-    const tokenEndpoint = await findTokenEndpoint(internalServerUrl);
-    if (!tokenEndpoint) {
-      // Also try with the client-provided URL in case the internal one differs
-      const clientEndpoint = internalServerUrl !== serverUrl ? await findTokenEndpoint(serverUrl) : null;
-      if (!clientEndpoint) {
-        logger.warn('TOTP token exchange: no token endpoint found', { serverUrl, internalServerUrl });
-        return NextResponse.json({ error: 'no_token_endpoint', detail: 'Could not discover OAuth token endpoint on the mail server' }, { status: 404 });
+    let upstreamUrl: string;
+    if (configuredServerUrl) {
+      upstreamUrl = configuredServerUrl;
+    } else if (allowCustomEndpoint) {
+      if (!(await isPublicHttpUrl(serverUrl))) {
+        logger.warn('TOTP token exchange: rejected non-public server URL');
+        return NextResponse.json({ error: 'invalid_server_url' }, { status: 400 });
       }
-      return await attemptAllStrategies(clientEndpoint, username, password, slot);
+      upstreamUrl = serverUrl;
+    } else {
+      return NextResponse.json({ error: 'jmap_server_not_configured' }, { status: 500 });
     }
 
-    return await attemptAllStrategies(tokenEndpoint, username, password, slot);
+    const tokenEndpoint = await findTokenEndpoint(upstreamUrl);
+    if (!tokenEndpoint) {
+      logger.warn('TOTP token exchange: no token endpoint found');
+      return NextResponse.json({ error: 'no_token_endpoint', detail: 'Could not discover OAuth token endpoint on the mail server' }, { status: 404 });
+    }
+
+    return await attemptAllStrategies(tokenEndpoint, upstreamUrl, username, password, slot);
   } catch (error) {
     logger.error('TOTP token exchange error', { error: error instanceof Error ? error.message : 'Unknown error' });
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -106,14 +127,15 @@ export async function POST(request: NextRequest) {
 
 async function attemptAllStrategies(
   tokenEndpoint: string,
+  serverUrl: string,
   username: string,
   password: string,
   slot: number,
 ): Promise<NextResponse> {
   logger.info('TOTP token exchange: found token endpoint', { tokenEndpoint });
 
-  const clientId = process.env.OAUTH_CLIENT_ID;
-  const clientSecret = process.env.OAUTH_CLIENT_SECRET;
+  const clientId = configManager.get<string>('oauthClientId', '') || process.env.OAUTH_CLIENT_ID;
+  const clientSecret = configManager.get<string>('oauthClientSecret', '') || process.env.OAUTH_CLIENT_SECRET || readFileEnv(process.env.OAUTH_CLIENT_SECRET_FILE);
   const basicAuth = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   const attempts: Array<{ strategy: string; error: string }> = [];
 
@@ -124,6 +146,7 @@ async function attemptAllStrategies(
     const result = await tryTokenRequest(tokenEndpoint, params);
     if (result.ok) {
       logger.info('TOTP token exchange succeeded (ROPC with client_id)');
+      void recordLogin(username, serverUrl);
       return await storeAndRespond(result.tokens, slot);
     }
     attempts.push({ strategy: 'ROPC with client_id', error: result.error });
@@ -135,6 +158,7 @@ async function attemptAllStrategies(
     const result = await tryTokenRequest(tokenEndpoint, params);
     if (result.ok) {
       logger.info('TOTP token exchange succeeded (ROPC without client_id)');
+      void recordLogin(username, serverUrl);
       return await storeAndRespond(result.tokens, slot);
     }
     attempts.push({ strategy: 'ROPC without client_id', error: result.error });
@@ -146,6 +170,7 @@ async function attemptAllStrategies(
     const result = await tryTokenRequest(tokenEndpoint, params, { 'Authorization': basicAuth });
     if (result.ok) {
       logger.info('TOTP token exchange succeeded (Basic Auth header)');
+      void recordLogin(username, serverUrl);
       return await storeAndRespond(result.tokens, slot);
     }
     attempts.push({ strategy: 'Basic Auth header', error: result.error });
@@ -157,6 +182,7 @@ async function attemptAllStrategies(
     const result = await tryTokenRequest(tokenEndpoint, params, { 'Authorization': basicAuth });
     if (result.ok) {
       logger.info('TOTP token exchange succeeded (client_credentials + Basic Auth)');
+      void recordLogin(username, serverUrl);
       return await storeAndRespond(result.tokens, slot);
     }
     attempts.push({ strategy: 'client_credentials + Basic Auth', error: result.error });

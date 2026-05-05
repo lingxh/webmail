@@ -9,7 +9,8 @@ import { Paperclip, Star, Circle, ChevronRight, ChevronDown, Loader2, MessageSqu
 import { useSettingsStore, KEYWORD_PALETTE } from "@/stores/settings-store";
 import { useUIStore } from "@/stores/ui-store";
 import { useEmailStore } from "@/stores/email-store";
-import { getThreadColorTag, getEmailColorTag } from "@/lib/thread-utils";
+import { useAccountStore } from "@/stores/account-store";
+import { getThreadColorTag, getEmailColorTags } from "@/lib/thread-utils";
 import { useEmailDrag } from "@/hooks/use-email-drag";
 import { useLongPress } from "@/hooks/use-long-press";
 import { ThreadEmailItem } from "./thread-email-item";
@@ -55,18 +56,27 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
     const isStarred = email.keywords?.$flagged;
     const isAnswered = email.keywords?.$answered;
     const isForwarded = email.keywords?.$forwarded;
-    const sender = email.from?.[0];
-    const { selectedMailbox, selectedEmailIds, toggleEmailSelection, selectRangeEmails, clearSelection } = useEmailStore();
+    const { selectedMailbox, mailboxes, selectedEmailIds, toggleEmailSelection, selectRangeEmails, clearSelection } = useEmailStore();
+    // In Sent/Drafts folders, show recipient instead of sender (which is always "me")
+    const currentMailboxRole = mailboxes.find(mb => mb.id === selectedMailbox)?.role;
+    const showRecipient = currentMailboxRole === 'sent' || currentMailboxRole === 'drafts';
+    const sender = showRecipient ? (email.to?.[0] ?? email.from?.[0]) : email.from?.[0];
     const emailKeywords = useSettingsStore((state) => state.emailKeywords);
     const density = useSettingsStore((state) => state.density);
     const mailLayout = useSettingsStore((state) => state.mailLayout);
+    const showAvatarsInJunk = useSettingsStore((state) => state.showAvatarsInJunk);
+    const hideJunkAvatarImages = currentMailboxRole === 'junk' && !showAvatarsInJunk;
+    const isUnifiedView = useEmailStore((state) => state.isUnifiedView);
+    const getAccountById = useAccountStore((state) => state.getAccountById);
+    const accountColor = email.accountId ? getAccountById(email.accountId)?.avatarColor : undefined;
     const isChecked = selectedEmailIds.has(email.id);
     const isFocusedMailLayout = mailLayout === 'focus';
     const inlinePreview = showPreview && email.preview ? ` ${email.preview}` : '';
 
-    // Resolve color and keyword definition from keyword definitions if not passed directly
-    const tagId = getEmailColorTag(email.keywords);
-    const resolvedKeywordDef = tagId ? emailKeywords.find(k => k.id === tagId) : null;
+    // Resolve color tags using keyword definitions; unknown tags fall back to gray
+    const tagIds = getEmailColorTags(email.keywords);
+    const resolvedKeywordDefs = tagIds.map(id => emailKeywords.find(k => k.id === id) ?? { id, label: id, color: 'gray' });
+    const resolvedKeywordDef = resolvedKeywordDefs[0] ?? null;
     const resolvedColorTag = (() => {
       if (colorTag) return colorTag;
       return resolvedKeywordDef ? KEYWORD_PALETTE[resolvedKeywordDef.color]?.bg ?? null : null;
@@ -125,7 +135,8 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
               : "bg-background"
           ),
           selected && !resolvedColorTag && "shadow-sm",
-          !resolvedColorTag && !selected && "hover:bg-muted hover:shadow-sm",
+          !resolvedColorTag && !selected && !isChecked && "hover:bg-muted hover:shadow-sm",
+          !resolvedColorTag && (selected || isChecked) && "hover:bg-accent hover:shadow-sm",
           resolvedColorTag && "hover:brightness-95 dark:hover:brightness-110",
           isUnread && !resolvedColorTag && "bg-accent/30",
           isChecked && "ring-2 ring-primary/20 bg-accent/40",
@@ -173,6 +184,7 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
               email={sender?.email}
               size="md"
               className="flex-shrink-0 shadow-sm"
+              disableImages={hideJunkAvatarImages}
             />
           )}
 
@@ -180,6 +192,13 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
             {isFocusedMailLayout ? (
               <div className="flex items-center justify-between gap-3">
                 <div className="flex min-w-0 flex-1 items-center gap-3">
+                  {isUnifiedView && email.accountId && accountColor && (
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: accountColor }}
+                      title={email.accountLabel}
+                    />
+                  )}
                   <span className={cn(
                     'w-32 shrink-0 truncate text-sm lg:w-40',
                     isUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/80'
@@ -209,7 +228,9 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
                     </>
                   )}
                   {email.hasAttachment && <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />}
-                  {resolvedKeywordDef && <span className={cn('h-2.5 w-2.5 rounded-full', KEYWORD_PALETTE[resolvedKeywordDef.color]?.dot || 'bg-gray-400')} />}
+                  {resolvedKeywordDefs.map((kd) => (
+                    <span key={kd.id} className={cn('h-2.5 w-2.5 rounded-full', KEYWORD_PALETTE[kd.color]?.dot || 'bg-gray-400')} />
+                  ))}
                   <span className={cn(
                     'text-xs tabular-nums',
                     isUnread ? 'text-foreground font-semibold' : 'text-muted-foreground'
@@ -222,6 +243,13 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
               <>
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {isUnifiedView && email.accountId && accountColor && (
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: accountColor }}
+                        title={email.accountLabel}
+                      />
+                    )}
                     <span className={cn(
                       "truncate text-sm",
                       isUnread
@@ -252,15 +280,15 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    {resolvedKeywordDef && (
-                      <span className={cn(
+                    {resolvedKeywordDefs.map((kd) => (
+                      <span key={kd.id} className={cn(
                         "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full",
-                        KEYWORD_PALETTE[resolvedKeywordDef.color]?.bg || "bg-muted"
+                        KEYWORD_PALETTE[kd.color]?.bg || "bg-muted"
                       )}>
-                        <span className={cn("w-1.5 h-1.5 rounded-full", KEYWORD_PALETTE[resolvedKeywordDef.color]?.dot || "bg-gray-400")} />
-                        {resolvedKeywordDef.label}
+                        <span className={cn("w-1.5 h-1.5 rounded-full", KEYWORD_PALETTE[kd.color]?.dot || "bg-gray-400")} />
+                        {kd.label}
                       </span>
-                    )}
+                    ))}
                     <span className={cn(
                       "text-xs tabular-nums",
                       isUnread
@@ -281,7 +309,7 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
                   {email.subject || "(no subject)"}
                 </div>
 
-                {showPreview && density !== 'extra-compact' && (
+                {showPreview && density !== 'extra-compact' && density !== 'compact' && (
                   <p className={cn(
                     "text-sm leading-relaxed line-clamp-2",
                     isUnread
@@ -299,7 +327,7 @@ const SingleEmailItem = React.forwardRef<HTMLDivElement, SingleEmailItemProps>(
         {/* Hover Quick Actions */}
         <EmailHoverActions
           email={email}
-          backgroundClassName={resolvedColorTag ? resolvedColorTag : (selected ? "bg-accent" : "bg-muted")}
+          backgroundClassName={resolvedColorTag ? resolvedColorTag : ((selected || isChecked) ? "bg-accent" : "bg-muted")}
           onToggleStar={onToggleStar}
           onMarkAsRead={onMarkAsRead}
           onDelete={onDelete}
@@ -334,12 +362,25 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
     const showPreview = useSettingsStore((state) => state.showPreview);
     const density = useSettingsStore((state) => state.density);
     const mailLayout = useSettingsStore((state) => state.mailLayout);
+    const showAvatarsInJunk = useSettingsStore((state) => state.showAvatarsInJunk);
     const isMobile = useUIStore((state) => state.isMobile);
     const { latestEmail, participantNames, hasUnread, hasStarred, hasAttachment, hasAnswered, hasForwarded, emailCount } = thread;
     const isFocusedMailLayout = mailLayout === 'focus';
     const inlinePreview = showPreview && latestEmail.preview ? ` ${latestEmail.preview}` : '';
 
-    const { selectedMailbox, selectedEmailIds, toggleEmailSelection, selectRangeEmails, clearSelection } = useEmailStore();
+    const { selectedMailbox, mailboxes, selectedEmailIds, toggleEmailSelection, selectRangeEmails, clearSelection, isUnifiedView } = useEmailStore();
+    const getAccountById = useAccountStore((state) => state.getAccountById);
+    const threadAccountColor = latestEmail.accountId ? getAccountById(latestEmail.accountId)?.avatarColor : undefined;
+    // In Sent/Drafts folders, show recipient instead of sender (which is always "me")
+    const currentMailboxRole = mailboxes.find(mb => mb.id === selectedMailbox)?.role;
+    const showRecipient = currentMailboxRole === 'sent' || currentMailboxRole === 'drafts';
+    const displayNames = showRecipient
+      ? Array.from(new Set(
+          thread.emails.flatMap(e => (e.to ?? []).map(r => r.name || r.email.split('@')[0]))
+        )).slice(0, 4)
+      : participantNames;
+    const avatarPerson = showRecipient ? latestEmail.to?.[0] : latestEmail.from?.[0];
+    const hideJunkAvatarImages = currentMailboxRole === 'junk' && !showAvatarsInJunk;
 
     const { dragHandlers, isDragging: isThreadDragging } = useEmailDrag({
       email: latestEmail,
@@ -360,7 +401,7 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
 
     const threadColor = getThreadColorTag(thread.emails);
     const emailKeywordDefs = useSettingsStore((state) => state.emailKeywords);
-    const keywordDef = threadColor ? emailKeywordDefs.find(k => k.id === threadColor) : null;
+    const keywordDef = threadColor ? (emailKeywordDefs.find(k => k.id === threadColor) ?? { id: threadColor, label: threadColor, color: 'gray' }) : null;
     const colorTag = keywordDef ? KEYWORD_PALETTE[keywordDef.color]?.bg ?? null : null;
 
     const isSelected = selectedEmailId === latestEmail.id ||
@@ -452,7 +493,8 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
                 : "bg-background"
             ),
             isSelected && !colorTag && "shadow-sm",
-            !colorTag && !isSelected && "hover:bg-muted hover:shadow-sm",
+            !colorTag && !isSelected && !isChecked && "hover:bg-muted hover:shadow-sm",
+            !colorTag && (isSelected || isChecked) && "hover:bg-accent hover:shadow-sm",
             colorTag && "hover:brightness-95 dark:hover:brightness-110",
             hasUnread && !colorTag && !isSelected && "bg-accent/30",
             isExpanded && "border-b border-border/50",
@@ -522,10 +564,11 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
 
             {!isFocusedMailLayout && density !== 'extra-compact' && (
               <Avatar
-                name={latestEmail.from?.[0]?.name}
-                email={latestEmail.from?.[0]?.email}
+                name={avatarPerson?.name}
+                email={avatarPerson?.email}
                 size="md"
                 className="flex-shrink-0 shadow-sm"
+                disableImages={hideJunkAvatarImages}
               />
             )}
 
@@ -533,11 +576,18 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
               {isFocusedMailLayout ? (
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex min-w-0 flex-1 items-center gap-3">
+                    {isUnifiedView && latestEmail.accountId && threadAccountColor && (
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ backgroundColor: threadAccountColor }}
+                        title={latestEmail.accountLabel}
+                      />
+                    )}
                     <span className={cn(
                       'w-32 shrink-0 truncate text-sm lg:w-44',
                       hasUnread ? 'font-semibold text-foreground' : 'font-medium text-foreground/80'
                     )}>
-                      {participantNames.join(', ')}
+                      {displayNames.join(', ')}
                     </span>
                     <span
                       className={cn(
@@ -572,7 +622,9 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
                       </>
                     )}
                     {hasAttachment && <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />}
-                    {keywordDef && <span className={cn('h-2.5 w-2.5 rounded-full', KEYWORD_PALETTE[keywordDef.color]?.dot || 'bg-gray-400')} />}
+                    {keywordDef && (
+                      <span className={cn('h-2.5 w-2.5 rounded-full', KEYWORD_PALETTE[keywordDef.color]?.dot || 'bg-gray-400')} />
+                    )}
                     <span className={cn(
                       'text-xs tabular-nums',
                       hasUnread ? 'text-foreground font-semibold' : 'text-muted-foreground'
@@ -585,13 +637,20 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
                 <>
                   <div className="flex items-center justify-between gap-2 mb-1">
                     <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {isUnifiedView && latestEmail.accountId && threadAccountColor && (
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ backgroundColor: threadAccountColor }}
+                          title={latestEmail.accountLabel}
+                        />
+                      )}
                       <span className={cn(
                         "truncate text-sm",
                         hasUnread
                           ? "font-bold text-foreground"
                           : "font-medium text-muted-foreground"
                       )}>
-                        {participantNames.join(", ")}
+                        {displayNames.join(", ")}
                       </span>
                       <span
                         className={cn(
@@ -656,7 +715,7 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
                     {latestEmail.subject || "(no subject)"}
                   </div>
 
-                  {showPreview && density !== 'extra-compact' && (
+                  {showPreview && density !== 'extra-compact' && density !== 'compact' && (
                     <p className={cn(
                       "text-sm leading-relaxed line-clamp-2",
                       hasUnread
@@ -674,7 +733,7 @@ export const ThreadListItem = React.forwardRef<HTMLDivElement, ThreadListItemPro
           {/* Hover Quick Actions for thread header */}
           <EmailHoverActions
             email={latestEmail}
-            backgroundClassName={colorTag ? colorTag : (isSelected ? "bg-accent" : "bg-muted")}
+            backgroundClassName={colorTag ? colorTag : ((isSelected || isChecked) ? "bg-accent" : "bg-muted")}
             onToggleStar={onToggleStar ? () => onToggleStar(latestEmail) : undefined}
             onMarkAsRead={onMarkAsRead ? (read) => onMarkAsRead(latestEmail, read) : undefined}
             onDelete={onDelete ? () => onDelete(latestEmail) : undefined}

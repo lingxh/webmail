@@ -15,7 +15,7 @@ import { useLongPress } from "@/hooks/use-long-press";
 import { useUIStore } from "@/stores/ui-store";
 import { EmailIdentityBadge } from "./email-identity-badge";
 import { EmailHoverActions } from "./email-hover-actions";
-import { getEmailColorTag } from "@/lib/thread-utils";
+import { getEmailColorTags } from "@/lib/thread-utils";
 
 interface EmailListItemProps {
   email: Email;
@@ -32,11 +32,12 @@ interface EmailListItemProps {
 
 export function EmailListItem({ email, selected, onClick, onContextMenu, onToggleStar, onMarkAsRead, onDelete, onArchive, onSetColorTag, onMarkAsSpam }: EmailListItemProps) {
   const t = useTranslations('email_viewer');
-  const { selectedEmailIds, toggleEmailSelection, selectRangeEmails, selectedMailbox, clearSelection } = useEmailStore();
+  const { selectedEmailIds, toggleEmailSelection, selectRangeEmails, selectedMailbox, mailboxes, clearSelection } = useEmailStore();
   const showPreview = useSettingsStore((state) => state.showPreview);
   const density = useSettingsStore((state) => state.density);
   const mailLayout = useSettingsStore((state) => state.mailLayout);
   const emailKeywords = useSettingsStore((state) => state.emailKeywords);
+  const showAvatarsInJunk = useSettingsStore((state) => state.showAvatarsInJunk);
   const { identities } = useAuthStore();
   const isChecked = selectedEmailIds.has(email.id);
   const isUnread = !email.keywords?.$seen;
@@ -44,13 +45,19 @@ export function EmailListItem({ email, selected, onClick, onContextMenu, onToggl
   const isImportant = email.keywords?.["$important"];
   const isAnswered = email.keywords?.$answered;
   const isForwarded = email.keywords?.$forwarded;
-  const sender = email.from?.[0];
+  // In Sent/Drafts folders, show recipient instead of sender (which is always "me")
+  const currentMailboxRole = mailboxes.find(mb => mb.id === selectedMailbox)?.role;
+  const showRecipient = currentMailboxRole === 'sent' || currentMailboxRole === 'drafts';
+  const sender = showRecipient ? (email.to?.[0] ?? email.from?.[0]) : email.from?.[0];
   const isFocusedMailLayout = mailLayout === 'focus';
+  const hideJunkAvatarImages = currentMailboxRole === 'junk' && !showAvatarsInJunk;
   const inlinePreview = showPreview && email.preview ? ` ${email.preview}` : '';
 
-  // Resolve color tag using keyword definitions from settings
-  const colorTagId = getEmailColorTag(email.keywords);
-  const keywordDef = colorTagId ? emailKeywords.find(k => k.id === colorTagId) : null;
+  // Resolve color tags using keyword definitions from settings; unknown tags fall back to gray
+  const colorTagIds = getEmailColorTags(email.keywords);
+  const keywordDefs = colorTagIds.map(id => emailKeywords.find(k => k.id === id) ?? { id, label: id, color: 'gray' });
+  // Use first tag for background coloring
+  const keywordDef = keywordDefs[0] ?? null;
   const colorTag = keywordDef ? KEYWORD_PALETTE[keywordDef.color]?.bg ?? null : null;
 
   // Drag and drop functionality
@@ -94,7 +101,8 @@ export function EmailListItem({ email, selected, onClick, onContextMenu, onToggl
             : "bg-background"
         ),
         selected && !colorTag && "shadow-sm",
-        !colorTag && !selected && "hover:bg-muted hover:shadow-sm",
+        !colorTag && !selected && !isChecked && "hover:bg-muted hover:shadow-sm",
+        !colorTag && (selected || isChecked) && "hover:bg-accent hover:shadow-sm",
         colorTag && "hover:brightness-95 dark:hover:brightness-110",
         isUnread && !selected && !colorTag && "bg-warning/10",
         // Add visual feedback for checked state
@@ -158,6 +166,7 @@ export function EmailListItem({ email, selected, onClick, onContextMenu, onToggl
             email={sender?.email}
             size="md"
             className="flex-shrink-0 shadow-sm"
+            disableImages={hideJunkAvatarImages}
           />
         )}
 
@@ -196,7 +205,9 @@ export function EmailListItem({ email, selected, onClick, onContextMenu, onToggl
                   </>
                 )}
                 {email.hasAttachment && <Paperclip className="w-3.5 h-3.5 text-muted-foreground" />}
-                {keywordDef && <span className={cn('h-2.5 w-2.5 rounded-full', KEYWORD_PALETTE[keywordDef.color]?.dot || 'bg-gray-400')} />}
+                {keywordDefs.map((kd) => (
+                  <span key={kd.id} className={cn('h-2.5 w-2.5 rounded-full', KEYWORD_PALETTE[kd.color]?.dot || 'bg-gray-400')} />
+                ))}
                 <span className={cn(
                   'text-xs tabular-nums',
                   isUnread ? 'text-foreground font-semibold' : 'text-muted-foreground'
@@ -246,15 +257,15 @@ export function EmailListItem({ email, selected, onClick, onContextMenu, onToggl
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-shrink-0">
-                  {keywordDef && (
-                    <span className={cn(
+                  {keywordDefs.map((kd) => (
+                    <span key={kd.id} className={cn(
                       "inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-medium rounded-full",
-                      KEYWORD_PALETTE[keywordDef.color]?.bg || "bg-muted"
+                      KEYWORD_PALETTE[kd.color]?.bg || "bg-muted"
                     )}>
-                      <span className={cn("w-1.5 h-1.5 rounded-full", KEYWORD_PALETTE[keywordDef.color]?.dot || "bg-gray-400")} />
-                      {keywordDef.label}
+                      <span className={cn("w-1.5 h-1.5 rounded-full", KEYWORD_PALETTE[kd.color]?.dot || "bg-gray-400")} />
+                      {kd.label}
                     </span>
-                  )}
+                  ))}
                   <span className={cn(
                     "text-xs tabular-nums",
                     isUnread
@@ -277,7 +288,7 @@ export function EmailListItem({ email, selected, onClick, onContextMenu, onToggl
               </div>
 
               {/* Third Line: Preview (controlled by showPreview setting) */}
-              {showPreview && density !== 'extra-compact' && (
+              {showPreview && density !== 'extra-compact' && density !== 'compact' && (
                 <p className={cn(
                   "text-sm leading-relaxed line-clamp-2",
                   isUnread
@@ -295,7 +306,7 @@ export function EmailListItem({ email, selected, onClick, onContextMenu, onToggl
       {/* Hover Quick Actions */}
       <EmailHoverActions
         email={email}
-        backgroundClassName={colorTag ? colorTag : (selected ? "bg-selection" : "bg-muted")}
+        backgroundClassName={colorTag ? colorTag : ((selected || isChecked) ? "bg-accent" : "bg-muted")}
         onToggleStar={onToggleStar}
         onMarkAsRead={onMarkAsRead}
         onDelete={onDelete}

@@ -1,4 +1,4 @@
-import type { Email, Mailbox, StateChange, AccountStates, Thread, Identity, EmailAddress, ContactCard, AddressBook, VacationResponse, Calendar, CalendarEvent, CalendarEventFilter, CalendarTask, FileNode } from "./types";
+import type { Email, Mailbox, StateChange, AccountStates, Thread, Identity, EmailAddress, ContactCard, AddressBook, AddressBookRights, VacationResponse, Calendar, CalendarRights, CalendarEvent, CalendarEventFilter, CalendarTask, FileNode, Principal, PushSubscription } from "./types";
 import type { SieveScript, SieveCapabilities } from "./sieve-types";
 
 /**
@@ -27,6 +27,7 @@ export interface IJMAPClient {
 
   // ── Capabilities ──────────────────────────────────────────────
   getCapabilities(): Record<string, unknown>;
+  hasAccountCapability(capability: string, accountId?: string): boolean;
   getMaxSizeUpload(): number;
   getMaxCallsInRequest(): number;
   getMaxObjectsInGet(): number;
@@ -49,6 +50,20 @@ export interface IJMAPClient {
   onStateChange(callback: (change: StateChange) => void): void;
   getLastStates(): AccountStates;
   setLastStates(states: AccountStates): void;
+
+  // ── PushSubscription (RFC 8620 §7.2) ───────────────────────────
+  // Browser-driven Web Push setup: register a relay URL the JMAP server can
+  // forward StateChange events to. Mobile uses the same primitives.
+  listPushSubscriptions(): Promise<PushSubscription[]>;
+  createPushSubscription(params: {
+    deviceClientId: string;
+    url: string;
+    types: string[];
+    expires?: string;
+  }): Promise<string>;
+  verifyPushSubscription(id: string, verificationCode: string): Promise<void>;
+  updatePushSubscription(id: string, patch: { expires?: string; types?: string[] }): Promise<boolean>;
+  destroyPushSubscription(id: string): Promise<void>;
 
   // ── Quota ─────────────────────────────────────────────────────
   getQuota(): Promise<{ used: number; total: number } | null>;
@@ -84,8 +99,17 @@ export interface IJMAPClient {
   moveToTrash(emailId: string, trashMailboxId: string, accountId?: string): Promise<void>;
   batchDeleteEmails(emailIds: string[]): Promise<void>;
   batchMoveEmails(emailIds: string[], toMailboxId: string, accountId?: string): Promise<void>;
+  batchArchiveEmails(
+    emails: Array<{ id: string; receivedAt: string }>,
+    archiveMailboxId: string,
+    mode: 'single' | 'year' | 'month',
+    existingMailboxes: Mailbox[],
+    accountId?: string,
+  ): Promise<void>;
   moveEmail(emailId: string, toMailboxId: string, accountId?: string): Promise<void>;
   emptyMailbox(mailboxId: string): Promise<number>;
+  markMailboxAsRead(mailboxId: string, accountId?: string): Promise<number>;
+  markAllAsRead(excludeMailboxIds?: string[], accountId?: string): Promise<number>;
   markAsSpam(emailId: string, accountId?: string): Promise<void>;
   undoSpam(emailId: string, originalMailboxId: string, accountId?: string): Promise<void>;
 
@@ -103,8 +127,9 @@ export interface IJMAPClient {
     identityId?: string,
     fromEmail?: string,
     draftId?: string,
-    attachments?: Array<{ blobId: string; name: string; type: string; size: number }>,
+    attachments?: Array<{ blobId: string; name: string; type: string; size: number; disposition?: 'attachment' | 'inline'; cid?: string }>,
     fromName?: string,
+    htmlBody?: string,
   ): Promise<string>;
 
   sendEmail(
@@ -118,7 +143,9 @@ export interface IJMAPClient {
     draftId?: string,
     fromName?: string,
     htmlBody?: string,
-    attachments?: Array<{ blobId: string; name: string; type: string; size: number }>,
+    attachments?: Array<{ blobId: string; name: string; type: string; size: number; disposition?: 'attachment' | 'inline'; cid?: string }>,
+    inReplyTo?: string[],
+    references?: string[],
   ): Promise<void>;
 
   sendImipReply(opts: {
@@ -178,6 +205,9 @@ export interface IJMAPClient {
   getContactsAccountId(): string;
   getAddressBooks(): Promise<AddressBook[]>;
   getAllAddressBooks(): Promise<AddressBook[]>;
+  createAddressBook(name: string): Promise<AddressBook>;
+  updateAddressBook(addressBookId: string, updates: Partial<AddressBook>, targetAccountId?: string): Promise<void>;
+  deleteAddressBook(addressBookId: string, targetAccountId?: string): Promise<void>;
   getContacts(addressBookId?: string): Promise<ContactCard[]>;
   getAllContacts(): Promise<ContactCard[]>;
   getContact(contactId: string, accountId?: string): Promise<ContactCard | null>;
@@ -214,6 +244,12 @@ export interface IJMAPClient {
   createCalendarTask(task: Partial<CalendarTask>, targetAccountId?: string): Promise<CalendarTask>;
   updateCalendarTask(taskId: string, updates: Partial<CalendarTask>, targetAccountId?: string): Promise<void>;
   deleteCalendarTask(taskId: string, targetAccountId?: string): Promise<void>;
+
+  // ── Sharing (RFC 9670 Principals) ─────────────────────────────
+  supportsPrincipals(): boolean;
+  getPrincipals(targetAccountId?: string): Promise<Principal[]>;
+  setCalendarShare(calendarId: string, principalId: string, rights: CalendarRights | null, targetAccountId?: string): Promise<void>;
+  setAddressBookShare(addressBookId: string, principalId: string, rights: AddressBookRights | null, targetAccountId?: string): Promise<void>;
 
   // ── Sieve / Filters ──────────────────────────────────────────
   getSieveAccountId(): string;

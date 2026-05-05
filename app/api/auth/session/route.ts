@@ -9,6 +9,9 @@ import {
   clearStalwartAuthContextInStore,
   setStalwartAuthContextInStore,
 } from '@/lib/stalwart/auth-context';
+import { configManager } from '@/lib/admin/config-manager';
+import { isPublicHttpUrl } from '@/lib/security/url-guard';
+import { recordLogin } from '@/lib/telemetry/login-tracker';
 
 const COOKIE_OPTIONS = {
   ...getCookieOptions(),
@@ -25,7 +28,9 @@ function getSlot(request: NextRequest): number {
 
 export async function POST(request: NextRequest) {
   try {
-    if (process.env.OAUTH_ENABLED === 'true' && process.env.OAUTH_ONLY === 'true') {
+    const oauthEnabled = configManager.get<boolean>('oauthEnabled', false);
+    const oauthOnly = configManager.get<boolean>('oauthOnly', false);
+    if (oauthEnabled && oauthOnly) {
       return NextResponse.json({ error: 'Basic authentication is disabled' }, { status: 403 });
     }
 
@@ -34,10 +39,37 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // Pin the upstream URL to the configured JMAP server so an unauthenticated
+    // caller cannot point this route at internal hosts. Only when no server URL
+    // is configured AND the deployment explicitly allows custom JMAP endpoints
+    // do we honor the body URL — and even then it must be a public URL.
+    await configManager.ensureLoaded();
+    const configuredServerUrl =
+      configManager.get<string>('jmapServerUrl', '') ||
+      process.env.JMAP_SERVER_URL ||
+      process.env.NEXT_PUBLIC_JMAP_SERVER_URL ||
+      '';
+    const allowCustomEndpoint = configManager.get<boolean>('allowCustomJmapEndpoint', false);
+
+    let upstreamUrl: string;
+    let upstreamTrusted: boolean;
+    if (configuredServerUrl) {
+      upstreamUrl = configuredServerUrl;
+      upstreamTrusted = true;
+    } else if (allowCustomEndpoint) {
+      if (!(await isPublicHttpUrl(serverUrl))) {
+        return NextResponse.json({ error: 'Server URL is not allowed' }, { status: 400 });
+      }
+      upstreamUrl = serverUrl;
+      upstreamTrusted = false;
+    } else {
+      return NextResponse.json({ error: 'JMAP server not configured' }, { status: 500 });
+    }
+
     const slot = typeof bodySlot === 'number' && bodySlot >= 0 && bodySlot <= 4 ? bodySlot : getSlot(request);
     const cookieName = sessionCookieName(slot);
     const authHeader = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
-    const normalizedServerUrl = await verifyJmapAuth(serverUrl, authHeader);
+    const normalizedServerUrl = await verifyJmapAuth(upstreamUrl, authHeader, { trusted: upstreamTrusted });
     const token = encryptSession(normalizedServerUrl, username, password);
     const cookieStore = await cookies();
     cookieStore.set(cookieName, token, COOKIE_OPTIONS);
@@ -46,6 +78,8 @@ export async function POST(request: NextRequest) {
       username,
       authHeader,
     });
+
+    void recordLogin(username, normalizedServerUrl);
 
     return NextResponse.json({ ok: true });
   } catch (error) {
@@ -95,7 +129,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * PUT — retrieve full credentials (including password) for session restoration.
+ * PUT - retrieve full credentials (including password) for session restoration.
  * Protected by multiple Sec-Fetch-* headers to ensure only same-origin
  * browser fetch() requests succeed. Non-browser clients cannot forge these.
  */

@@ -17,6 +17,7 @@ import { SidebarAppsModal } from "@/components/layout/sidebar-apps-modal";
 import { InlineAppView } from "@/components/layout/inline-app-view";
 import { useSidebarApps } from "@/hooks/use-sidebar-apps";
 import { useIsMobile, useIsTablet } from "@/hooks/use-media-query";
+import { useRefreshGesture } from "@/hooks/use-refresh-gesture";
 import { usePolicyStore } from "@/stores/policy-store";
 import { FileBrowser } from "@/components/files/file-browser";
 import { ImagePreviewModal } from "@/components/files/image-preview-modal";
@@ -106,14 +107,15 @@ export default function FilesPage() {
 
   const detailResource = detailName ? resources.find(r => r.name === detailName) || null : null;
 
-  // Check auth on mount
+  // Check auth on mount – skip when already authenticated so that navigating
+  // between routes doesn't retrigger checkAuth's transient `{ client: null,
+  // isLoading: true }` reset, which was flashing the spinner on every nav.
   useEffect(() => {
-    const { isAuthenticated: hydratedAuthenticated, client: hydratedClient } = useAuthStore.getState();
-    if (hydratedAuthenticated && hydratedClient) {
+    const state = useAuthStore.getState();
+    if (state.isAuthenticated && state.client) {
       setInitialCheckDone(true);
       return;
     }
-
     checkAuth().finally(() => {
       setInitialCheckDone(true);
     });
@@ -134,6 +136,15 @@ export default function FilesPage() {
       initClient(client);
     }
   }, [isAuthenticated, client, initClient]);
+
+  // Intercept browser refresh gestures (F5, Ctrl/Cmd+R, pull-to-refresh)
+  // and refresh files via JMAP instead of reloading the page.
+  useRefreshGesture({
+    enabled: isAuthenticated && !!client && supportsFiles === true,
+    onRefresh: async () => {
+      await refresh();
+    },
+  });
 
   // Check support and load root after client is initialized
   const storeClient = useFileStore(s => s.client);

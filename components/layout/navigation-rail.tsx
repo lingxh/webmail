@@ -17,11 +17,13 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { usePolicyStore } from "@/stores/policy-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useAccountStore } from "@/stores/account-store";
+import { useUpdateStore, selectHasUpdate } from "@/stores/update-store";
 import { getActiveAccountSlotHeaders } from "@/lib/auth/active-account-slot";
-import { getInitials } from "@/lib/account-utils";
+import { getInitials, MAX_ACCOUNTS } from "@/lib/account-utils";
 import { cn, formatFileSize } from "@/lib/utils";
 import { PluginSlot } from "@/components/plugins/plugin-slot";
 import { KeyboardShortcutsModal } from "@/components/keyboard-shortcuts-modal";
+import { apiFetch } from "@/lib/browser-navigation";
 
 interface NavItem {
   id: string;
@@ -175,6 +177,11 @@ export function NavigationRail({
   const visibleSidebarApps = sidebarAppsEnabled ? sidebarApps : [];
   const inboxUnread = mailboxes.find(m => m.role === "inbox")?.unreadEmails || 0;
   const [isStalwartAdmin, setIsStalwartAdmin] = useState(false);
+  const hasUpdate = useUpdateStore(selectHasUpdate);
+  const updateSeverity = useUpdateStore((s) => s.status?.severity);
+  const startUpdatePolling = useUpdateStore((s) => s.startPolling);
+  useEffect(() => { startUpdatePolling(); }, [startUpdatePolling]);
+  const updateImportant = updateSeverity === 'security' || updateSeverity === 'deprecated';
 
   // Account list for rail
   const accounts = useAccountStore((s) => s.accounts);
@@ -223,13 +230,14 @@ export function NavigationRail({
     let cancelled = false;
     const headers = getActiveAccountSlotHeaders();
     if (!headers['X-JMAP-Cookie-Slot']) return;
-    fetch('/api/admin/stalwart-check', { headers })
+    apiFetch('/api/admin/auth', { headers })
       .then(res => res.json())
       .then(data => {
-        if (!cancelled && data.isStalwartAdmin) {
-          setIsStalwartAdmin(true);
+        if (cancelled || !data.stalwartAdmin) return;
+        setIsStalwartAdmin(true);
+        if (!data.authenticated) {
           // Pre-create admin session so /admin works even after full page navigation
-          fetch('/api/admin/auth', {
+          apiFetch('/api/admin/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...headers },
             body: JSON.stringify({ stalwartAuth: true }),
@@ -293,7 +301,7 @@ export function NavigationRail({
               prefetch
               onClick={activeAppId ? () => onCloseInlineApp?.() : undefined}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 py-2 px-3 min-w-[64px] min-h-[44px] shrink-0",
+                "flex flex-col items-center justify-center gap-1 py-2 px-1 min-h-[44px] grow shrink-0 basis-[64px]",
                 "transition-colors duration-150",
                 isActive
                   ? "text-primary"
@@ -312,7 +320,7 @@ export function NavigationRail({
                   <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-primary" />
                 )}
               </div>
-              <span className="text-[10px] font-medium leading-tight">{t(item.labelKey)}</span>
+              <span className="text-[10px] font-medium leading-tight truncate max-w-full">{t(item.labelKey)}</span>
             </Link>
           );
         })}
@@ -334,7 +342,7 @@ export function NavigationRail({
                 }
               }}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 py-2 px-3 min-w-[64px] min-h-[44px] shrink-0",
+                "flex flex-col items-center justify-center gap-1 py-2 px-1 min-h-[44px] grow shrink-0 basis-[64px]",
                 "transition-colors duration-150",
                 isActive
                   ? "text-primary"
@@ -347,24 +355,35 @@ export function NavigationRail({
                   <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-primary" />
                 )}
               </div>
-              <span className="text-[10px] font-medium leading-tight truncate max-w-[64px]">{app.name}</span>
+              <span className="text-[10px] font-medium leading-tight truncate max-w-full">{app.name}</span>
             </button>
           );
         })}
 
-        {/* Admin (Stalwart admins) */}
+        {/* Admin (Stalwart admins) - hard nav because /admin lives outside the [locale] tree */}
         {isStalwartAdmin && (
-          <NextLink
+          <a
             href="/admin"
             className={cn(
-              "flex flex-col items-center justify-center gap-1 py-2 px-3 min-w-[64px] min-h-[44px] shrink-0",
+              "flex flex-col items-center justify-center gap-1 py-2 px-1 min-h-[44px] grow shrink-0 basis-[64px]",
               "transition-colors duration-150",
               "text-muted-foreground hover:text-foreground"
             )}
           >
-            <Shield className="w-5 h-5" />
-            <span className="text-[10px] font-medium leading-tight">{t("admin") || "Admin"}</span>
-          </NextLink>
+            <span className="relative">
+              <Shield className="w-5 h-5" />
+              {hasUpdate && (
+                <span
+                  className={cn(
+                    "absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-background",
+                    updateImportant ? "bg-red-500" : "bg-amber-500",
+                  )}
+                  aria-label={updateImportant ? "Important update available" : "Update available"}
+                />
+              )}
+            </span>
+            <span className="text-[10px] font-medium leading-tight truncate max-w-full">{t("admin") || "Admin"}</span>
+          </a>
         )}
 
         {/* Settings */}
@@ -373,7 +392,7 @@ export function NavigationRail({
           prefetch
           onClick={activeAppId ? () => onCloseInlineApp?.() : undefined}
           className={cn(
-            "flex flex-col items-center justify-center gap-1 py-2 px-3 min-w-[64px] min-h-[44px] shrink-0",
+            "flex flex-col items-center justify-center gap-1 py-2 px-1 min-h-[44px] grow shrink-0 basis-[64px]",
             "transition-colors duration-150",
             isSettingsActive
               ? "text-primary"
@@ -387,7 +406,7 @@ export function NavigationRail({
               <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-primary" />
             )}
           </div>
-          <span className="text-[10px] font-medium leading-tight">{t("settings")}</span>
+          <span className="text-[10px] font-medium leading-tight truncate max-w-full">{t("settings")}</span>
         </Link>
       </nav>
     );
@@ -418,7 +437,7 @@ export function NavigationRail({
 
       <nav
         className={cn(
-          "flex flex-col",
+          "flex flex-col flex-1 min-h-0 overflow-y-auto scroll-hidden",
           collapsed ? "items-center gap-1 py-3 px-1" : "gap-0.5 py-2 px-2",
         )}
         role="navigation"
@@ -532,13 +551,22 @@ export function NavigationRail({
       {/* Footer: Admin + Settings + Help + Storage Quota + Sign Out + Push Status */}
       <div className="mt-auto flex flex-col items-center gap-2 pb-3 px-1">
         {isStalwartAdmin && (
-          <NextLink
+          <a
             href="/admin"
-            className="flex items-center justify-center w-10 h-10 rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-muted"
+            className="flex items-center justify-center w-10 h-10 rounded-md transition-colors text-muted-foreground hover:text-foreground hover:bg-muted relative"
             title={t("admin") || "Admin"}
           >
             <Shield className="w-[18px] h-[18px]" />
-          </NextLink>
+            {hasUpdate && (
+              <span
+                className={cn(
+                  "absolute top-2 right-2 w-2 h-2 rounded-full ring-2 ring-background",
+                  updateImportant ? "bg-red-500" : "bg-amber-500",
+                )}
+                aria-label={updateImportant ? "Important update available" : "Update available"}
+              />
+            )}
+          </a>
         )}
 
         <Link
@@ -626,6 +654,16 @@ export function NavigationRail({
                 </button>
               );
             })}
+            {accounts.length < MAX_ACCOUNTS && (
+              <button
+                onClick={() => router.push(`/login?mode=add-account` as never)}
+                className="flex items-center justify-center w-8 h-8 rounded-full border border-dashed border-muted-foreground/50 text-muted-foreground hover:border-foreground hover:text-foreground hover:bg-muted transition-colors flex-shrink-0"
+                title={t("add_account")}
+                aria-label={t("add_account")}
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            )}
             </div>
 
             {/* Logout button with popover */}

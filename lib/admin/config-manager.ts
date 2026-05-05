@@ -2,7 +2,8 @@ import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { logger } from '@/lib/logger';
-import { CONFIG_ENV_MAP, DEFAULT_POLICY, DEFAULT_THEME_POLICY, type SettingsPolicy } from './types';
+import { readFileEnv } from '@/lib/read-file-env';
+import { CONFIG_ENV_MAP, DEFAULT_FEATURE_GATES, DEFAULT_POLICY, DEFAULT_THEME_POLICY, type SettingsPolicy } from './types';
 
 function getAdminDir(): string {
   return process.env.ADMIN_DATA_DIR || path.join(process.cwd(), 'data', 'admin');
@@ -34,6 +35,7 @@ class ConfigManager {
       this.policyCache = {
         ...DEFAULT_POLICY,
         ...policy,
+        features: { ...DEFAULT_FEATURE_GATES, ...(policy.features || {}) },
         themePolicy: { ...DEFAULT_THEME_POLICY, ...(policy.themePolicy || {}) },
       };
     } else {
@@ -63,6 +65,12 @@ class ConfigManager {
       const envVal = process.env[mapping.envVar];
       if (envVal !== undefined) {
         return parseEnvValue(envVal, mapping.type) as T;
+      }
+      if (mapping.fileEnvVar) {
+        const fileVal = readFileEnv(process.env[mapping.fileEnvVar]);
+        if (fileVal !== null) {
+          return parseEnvValue(fileVal, mapping.type) as T;
+        }
       }
       if (defaultValue !== undefined) return defaultValue;
       return mapping.defaultValue as T;
@@ -94,9 +102,16 @@ class ConfigManager {
         const envVal = process.env[mapping.envVar];
         if (envVal !== undefined) {
           result[key] = { value: parseEnvValue(envVal, mapping.type), source: 'env' };
-        } else {
-          result[key] = { value: mapping.defaultValue, source: 'default' };
+          continue;
         }
+        if (mapping.fileEnvVar) {
+          const fileVal = readFileEnv(process.env[mapping.fileEnvVar]);
+          if (fileVal !== null) {
+            result[key] = { value: parseEnvValue(fileVal, mapping.type), source: 'env' };
+            continue;
+          }
+        }
+        result[key] = { value: mapping.defaultValue, source: 'default' };
       }
     }
     return result;
@@ -129,7 +144,12 @@ class ConfigManager {
    * Update the settings policy. Writes to disk.
    */
   async setPolicy(policy: SettingsPolicy): Promise<void> {
-    this.policyCache = { ...DEFAULT_POLICY, ...policy };
+    this.policyCache = {
+      ...DEFAULT_POLICY,
+      ...policy,
+      features: { ...DEFAULT_FEATURE_GATES, ...(policy.features || {}) },
+      themePolicy: { ...DEFAULT_THEME_POLICY, ...(policy.themePolicy || {}) },
+    };
     await this.writeJsonFile('policy.json', this.policyCache as unknown as Record<string, unknown>);
   }
 

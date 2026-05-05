@@ -5,6 +5,7 @@ import { Shield } from 'lucide-react';
 import { useConfig } from '@/hooks/use-config';
 import { useThemeStore } from '@/stores/theme-store';
 import { replaceWindowLocation } from '@/lib/browser-navigation';
+import { apiFetch, replaceWindowLocation } from '@/lib/browser-navigation';
 
 export default function AdminLoginPage() {
   const [password, setPassword] = useState('');
@@ -20,7 +21,7 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch('/api/admin/auth', {
+      const res = await apiFetch('/api/admin/auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),

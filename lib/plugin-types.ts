@@ -11,6 +11,41 @@ export type ThemeVariant = 'light' | 'dark';
 
 // ─── Manifests ───────────────────────────────────────────────
 
+/**
+ * Advanced theme fields ("Theme API v2"). All optional and additive - a
+ * legacy theme that ships only `:root`/`.dark` CSS continues to work.
+ *
+ * When `apiVersion >= 2` (or any of `tokens`/`extends`/`derive`/`density`/
+ * `radii`/`typography` is present), the theme compiler runs at install time
+ * and produces a single CSS string from the structured fields, optionally
+ * concatenated with a hand-written `theme.css` for fine-grained overrides.
+ */
+export interface ThemeTokenSet {
+  /** Tokens applied regardless of variant (emitted into `:root`). */
+  common?: Record<string, string>;
+  /** Tokens applied in light mode (emitted into `:root`). */
+  light?: Record<string, string>;
+  /** Tokens applied in dark mode (emitted into `.dark`). */
+  dark?: Record<string, string>;
+}
+
+export type ThemeDensity = 'compact' | 'normal' | 'touch';
+
+export interface ThemeRadii {
+  sm?: string;
+  md?: string;
+  lg?: string;
+  xl?: string;
+  full?: string;
+}
+
+export interface ThemeTypography {
+  fontSans?: string;
+  fontMono?: string;
+  fontDisplay?: string;
+  baseFontSize?: string;
+}
+
 export interface ThemeManifest {
   id: string;
   name: string;
@@ -21,6 +56,22 @@ export interface ThemeManifest {
   preview?: string;
   variants: ThemeVariant[];
   minAppVersion?: string;
+
+  // ─── Advanced (Theme API v2) ─────────────────────────────────
+  /** Theme API version. Defaults to 1 (raw-CSS only). */
+  apiVersion?: 1 | 2;
+  /** Inherit tokens/CSS from another installed (or built-in) theme by id. */
+  extends?: string;
+  /** Structured colour tokens - compiled into CSS at install time. */
+  tokens?: ThemeTokenSet;
+  /** When true, missing standard tokens are derived (e.g. *-foreground from contrast). */
+  derive?: boolean;
+  /** Default UI density preset (compact / normal / touch). */
+  density?: ThemeDensity;
+  /** Border-radius scale, emitted as `--radius-*` vars. */
+  radii?: ThemeRadii;
+  /** Font stacks + base size, emitted as `--font-*` vars. */
+  typography?: ThemeTypography;
 }
 
 export interface PluginManifest {
@@ -34,6 +85,21 @@ export interface PluginManifest {
   entrypoint: string;
   minAppVersion?: string;
   settingsSchema?: Record<string, SettingFieldSchema>;
+  /**
+   * Bundled translations shipped inside the plugin ZIP.
+   * Keyed by BCP-47 locale tag ("en", "de", "fr-CA", …).
+   * The loader auto-registers these before calling activate(),
+   * so plugins can use api.i18n.t() without calling addTranslations() first.
+   */
+  locales?: Record<string, Record<string, string>>;
+  /**
+   * External origins this plugin may embed in iframes (e.g. for YouTube,
+   * Vimeo, Jitsi). Each entry is a single CSP origin like
+   *   "https://www.youtube-nocookie.com"
+   *   "https://*.example.com:8443"
+   * Validated at install time and merged into the host CSP `frame-src`.
+   */
+  frameOrigins?: string[];
 }
 
 export interface SettingFieldSchema {
@@ -55,12 +121,29 @@ export interface InstalledTheme {
   author: string;
   description: string;
   preview?: string;       // data: URI or blob URL
-  css: string;            // raw CSS text
+  css: string;            // compiled CSS text - what gets injected
+  /**
+   * Optional "skin" CSS shipped by Theme API v2 themes that need to restyle
+   * actual UI components (toolbars, lists, buttons, etc.) - not just colour
+   * tokens. Injected into a separate `<style>` tag so it can be stripped
+   * cleanly when the theme is deactivated. Stored in IndexedDB with the same
+   * lifecycle as `css` to keep localStorage small.
+   */
+  skin?: string;
   variants: ThemeVariant[];
   enabled: boolean;
   builtIn: boolean;
   managed?: boolean;
   forceEnabled?: boolean;
+
+  // ─── Advanced (Theme API v2) ─ carried over from the manifest ─
+  apiVersion?: 1 | 2;
+  extends?: string;
+  tokens?: ThemeTokenSet;
+  derive?: boolean;
+  density?: ThemeDensity;
+  radii?: ThemeRadii;
+  typography?: ThemeTypography;
 }
 
 export interface InstalledPlugin {
@@ -83,6 +166,8 @@ export interface InstalledPlugin {
   adminApproved?: boolean;
   settingsSchema?: Record<string, SettingFieldSchema>;
   settings: Record<string, unknown>;
+  /** Bundled translations, carried over from the manifest on install. */
+  locales?: Record<string, Record<string, string>>;
 }
 
 // ─── UI Slots ────────────────────────────────────────────────
@@ -92,6 +177,8 @@ export type SlotName =
   | 'email-banner'
   | 'email-footer'
   | 'composer-toolbar'
+  | 'composer-sidebar'
+  | 'composer-sidebar-right'
   | 'sidebar-widget'
   | 'email-detail-sidebar'
   | 'settings-section'
@@ -141,6 +228,12 @@ export interface SidebarWidget {
   label: string;
   render: React.ComponentType;
   order?: number;
+  /**
+   * For composer sidebars, choose which side of the New Message dialog the
+   * panel renders on. Defaults to `'left'` for backwards compatibility.
+   * Ignored by other sidebar slots.
+   */
+  side?: 'left' | 'right';
 }
 
 export interface ContextMenuItem {
@@ -186,7 +279,7 @@ export interface KeyboardShortcut {
 }
 
 // ─── Read-Only View Types ────────────────────────────────────
-// Projected views exposed to plugins — no direct store references
+// Projected views exposed to plugins - no direct store references
 
 export interface EmailReadView {
   id: string;
@@ -388,6 +481,217 @@ export interface ComposerContext {
   originalSubject?: string;
 }
 
+// ─── New hook context types ──────────────────────────────────
+
+/**
+ * Passed to onBeforeCompose handlers.
+ * Handlers may mutate the object in place to pre-fill fields; returning false cancels the compose.
+ */
+export interface ComposeOptions {
+  to: string[];
+  cc: string[];
+  subject: string;
+  body: string;
+  mode: 'new' | 'reply' | 'reply-all' | 'forward';
+}
+
+/**
+ * A small visual indicator injected into an email list row via onEmailListItemRender.
+ */
+export interface EmailListBadge {
+  /** Stable unique key within the plugin - used as React key */
+  key: string;
+  /** Short label text displayed in the badge */
+  label: string;
+  /** CSS color value for the badge background, e.g. "#e74c3c" or "var(--color-warning)" */
+  color?: string;
+  /** Tooltip / aria-label */
+  title?: string;
+}
+
+/**
+ * Passed to onMailtoIntercept handlers.
+ * Return false to prevent the browser from opening the system mail client.
+ */
+export interface MailtoContext {
+  /** The raw href, e.g. "mailto:alice@example.com?subject=Hello" */
+  href: string;
+  /** Parsed list of recipient addresses */
+  to: string[];
+  subject?: string;
+  body?: string;
+}
+
+/**
+ * Passed to onTransformOutgoingEmail handlers as a transform value.
+ * Handlers receive the email about to be sent and return a (possibly mutated)
+ * copy. Use to inject signatures, rewrite links, strip tracking pixels from
+ * forwards, encrypt the body, etc. Return undefined to pass through unchanged.
+ */
+export interface OutgoingEmail {
+  to: string[];
+  cc: string[];
+  bcc: string[];
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  identityId: string;
+  attachments: { name: string; type: string; size: number }[];
+  /** Original message id when this is a reply or forward */
+  inReplyTo?: string;
+  /** Free-form custom headers added by the composer or earlier handlers */
+  headers?: Record<string, string>;
+}
+
+/**
+ * Passed to onBeforeReply / onBeforeReplyAll / onBeforeForward intercept hooks.
+ * Return false to cancel the operation before the composer opens.
+ */
+export interface ReplyContext {
+  originalEmailId: string;
+  originalEmail: EmailReadView;
+  mode: 'reply' | 'reply-all' | 'forward';
+}
+
+/**
+ * Describes an attachment crossing an attachment hook (upload, download, preview).
+ */
+export interface AttachmentInfo {
+  name: string;
+  type: string;
+  size: number;
+  /** JMAP blob id, when known (download / preview / after-upload) */
+  blobId?: string;
+  /** The email this attachment belongs to (download / preview) */
+  emailId?: string;
+}
+
+/**
+ * Initial value passed to the onAttachmentPreview transform hook. A handler
+ * may return a different `previewUrl` (e.g. a proxied/sanitised URL) or a
+ * React component descriptor identified by `customRenderer`. Return undefined
+ * to pass through.
+ */
+export interface AttachmentPreview {
+  previewUrl?: string;
+  /** Optional plugin-supplied renderer key. The host resolves the renderer. */
+  customRenderer?: string;
+}
+
+/**
+ * Passed to onBeforeExternalLink intercept handlers when the user clicks a
+ * link that would navigate away from the app (typically inside an email body).
+ * Return false to cancel the navigation. Mutate `href` to rewrite it.
+ */
+export interface ExternalLinkContext {
+  href: string;
+  /** Anchor target ('_blank', '_self', etc.) when set */
+  target?: string;
+  /** Email currently in view, when the click came from an email body */
+  emailId?: string;
+}
+
+/**
+ * Passed to onTextSelectionChange observer when the user selects text inside
+ * the app. Source identifies which surface produced the selection so plugins
+ * can scope themselves (e.g. translate-on-select only inside emails).
+ */
+export interface SelectionContext {
+  text: string;
+  source: 'email-body' | 'composer' | 'task-detail' | 'event-detail' | 'other';
+  emailId?: string;
+}
+
+/**
+ * Returned by onCheckEventConflicts transform handlers. The form UI renders
+ * each warning as an inline notice next to the event time fields.
+ */
+export interface ConflictWarning {
+  /** Stable unique key per warning, used as React key */
+  key: string;
+  /** Short message — e.g. "Conflicts with: Team Standup" */
+  message: string;
+  severity?: 'info' | 'warning' | 'error';
+}
+
+/**
+ * Returned by onProvideSearchResults transform handlers. Plugins extend the
+ * initial array with their own results (CRM hits, Slack messages, etc.).
+ * The host renders these in a grouped section below native email results.
+ */
+export interface ExternalSearchResult {
+  /** Stable unique key */
+  key: string;
+  title: string;
+  snippet: string;
+  /** Plugin-handled action when the result row is clicked */
+  onClick: () => void;
+  /** Optional source label, e.g. "Slack", "Notion" */
+  source?: string;
+}
+
+/**
+ * Returned by onProvideRecipientSuggestions transform handlers. Lets plugins
+ * contribute non-contact suggestions (Slack handles, GitHub usernames, etc.)
+ * to the recipient autocomplete in the composer.
+ */
+export interface RecipientSuggestion {
+  name: string;
+  email: string;
+  /** Optional source label rendered as a small tag */
+  source?: string;
+  avatarUrl?: string;
+}
+
+/**
+ * Passed to router hooks (onNavigate, onRouteEnter, onRouteLeave).
+ * Paths are app-internal, e.g. "/mail/inbox", "/calendar".
+ */
+export interface RouteContext {
+  path: string;
+  /** Previous path (only on onNavigate) */
+  from?: string;
+}
+
+// ─── Plugin i18n API ─────────────────────────────────────────
+
+/**
+ * Localisation API exposed as `api.i18n` inside every plugin.
+ *
+ * Plugins ship their own translation tables; the app locale is tracked
+ * automatically so `t()` always returns the right string without any
+ * extra setup from the plugin side.
+ */
+export interface PluginI18n {
+  /**
+   * Register translations for one locale.
+   * Multiple calls for the same locale are merged (last-write-wins per key).
+   *
+   * @param locale  BCP-47 tag, e.g. "en", "de", "fr-CA"
+   * @param strings Key → translated string map. Use {paramName} for interpolation.
+   *
+   * @example
+   * api.i18n.addTranslations('en', { 'banner.title': 'Tracking blocked' });
+   * api.i18n.addTranslations('de', { 'banner.title': 'Tracking blockiert' });
+   */
+  addTranslations(locale: string, strings: Record<string, string>): void;
+
+  /**
+   * Return the translated string for `key` using the current app locale,
+   * with optional {param} interpolation.
+   *
+   * Falls back: exact locale → language prefix → "en" → raw key.
+   *
+   * @example
+   * api.i18n.t('banner.title')
+   * api.i18n.t('items_found', { count: 3 })  // 'Found {count} items' → 'Found 3 items'
+   */
+  t(key: string, params?: Record<string, string | number>): string;
+
+  /** The current app locale string (e.g. "en", "de", "fr") */
+  getLocale(): string;
+}
+
 // ─── Permission Reference ────────────────────────────────────
 
 export const ALL_PERMISSIONS = [
@@ -406,7 +710,8 @@ export const ALL_PERMISSIONS = [
   'auth:observe',
   'http:post',
   'ui:observe', 'ui:toolbar', 'ui:email-banner', 'ui:email-footer',
-  'ui:composer-toolbar', 'ui:sidebar-widget', 'ui:settings-section',
+  'ui:composer-toolbar', 'ui:composer-sidebar',
+  'ui:sidebar-widget', 'ui:settings-section',
   'ui:context-menu', 'ui:navigation-rail', 'ui:keyboard',
   'ui:calendar-action', 'ui:admin-page',
   'admin:config',
@@ -421,7 +726,13 @@ export const IMPLICIT_PERMISSIONS: Permission[] = ['ui:observe', 'app:lifecycle'
 // ─── Validation ──────────────────────────────────────────────
 
 export const MAX_PLUGIN_SIZE = 5 * 1024 * 1024; // 5 MB
-export const MAX_THEME_SIZE = 1 * 1024 * 1024;  // 1 MB
+export const MAX_THEME_SIZE = 2 * 1024 * 1024;  // 2 MB (was 1 MB; v2 themes may ship a skin.css)
+/**
+ * Maximum size of an individual `skin.css` payload after extraction.
+ * Skins are component-level CSS, not images - anything bigger than this is
+ * almost certainly bundling assets the validator will refuse anyway.
+ */
+export const MAX_THEME_SKIN_BYTES = 256 * 1024; // 256 KB
 
 export const ALLOWED_PLUGIN_FILES = new Set([
   '.js', '.mjs', '.css', '.json', '.png', '.svg', '.woff2', '.jpg', '.jpeg', '.webp',

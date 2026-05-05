@@ -1,19 +1,29 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ContactCard, AddressBook, ContactName } from '@/lib/jmap/types';
+import type { ContactCard, AddressBook, AddressBookRights, ContactName } from '@/lib/jmap/types';
 import type { IJMAPClient } from '@/lib/jmap/client-interface';
 import { generateUUID } from '@/lib/utils';
+import { debug } from '@/lib/debug';
 
 export function getContactDisplayName(contact: ContactCard): string {
-  if (contact.name?.components) {
-    const given = contact.name.components.find(c => c.kind === 'given')?.value || '';
-    const surname = contact.name.components.find(c => c.kind === 'surname')?.value || '';
-    const full = [given, surname].filter(Boolean).join(' ');
-    if (full) return full;
+  if (contact.name) {
+    // Try given + surname from components first
+    if (contact.name.components && contact.name.components.length > 0) {
+      const given = contact.name.components.find(c => c.kind === 'given')?.value || '';
+      const surname = contact.name.components.find(c => c.kind === 'surname')?.value || '';
+      const full = [given, surname].filter(Boolean).join(' ');
+      if (full) return full;
+    }
+    // Fall back to name.full (RFC 9553 - used by Stalwart and other JMAP servers)
+    if (contact.name.full) return contact.name.full;
   }
   if (contact.nicknames) {
     const nick = Object.values(contact.nicknames)[0];
     if (nick?.name) return nick.name;
+  }
+  if (contact.organizations) {
+    const org = Object.values(contact.organizations)[0];
+    if (org?.name) return org.name;
   }
   if (contact.emails) {
     const email = Object.values(contact.emails)[0];
@@ -35,6 +45,8 @@ export function getContactPhotoUri(contact: ContactCard): string | undefined {
   return undefined;
 }
 
+export const TRUSTED_SENDERS_BOOK_NAME = 'Trusted Senders';
+
 interface ContactStore {
   contacts: ContactCard[];
   addressBooks: AddressBook[];
@@ -43,6 +55,12 @@ interface ContactStore {
   isLoading: boolean;
   error: string | null;
   supportsSync: boolean;
+
+  // Trusted senders address book cache (runtime only, not persisted)
+  trustedSenderEmails: string[];
+  trustedSendersBookId: string | null;
+  trustedSendersLoaded: boolean;
+  trustedSendersLoading: boolean;
 
   selectedContactIds: Set<string>;
   lastSelectedContactId: string | null;
@@ -82,8 +100,18 @@ interface ContactStore {
   bulkDeleteContacts: (client: IJMAPClient | null, ids: string[]) => Promise<void>;
   bulkAddToGroup: (client: IJMAPClient | null, groupId: string, contactIds: string[]) => Promise<void>;
   moveContactToAddressBook: (client: IJMAPClient, contactIds: string[], addressBook: AddressBook) => Promise<void>;
+  renameAddressBook: (client: IJMAPClient, addressBook: AddressBook, newName: string) => Promise<void>;
+  removeAddressBook: (client: IJMAPClient, addressBook: AddressBook) => Promise<void>;
+  shareAddressBook: (client: IJMAPClient, addressBook: AddressBook, principalId: string, rights: AddressBookRights | null) => Promise<void>;
+  renameKeyword: (client: IJMAPClient | null, oldKeyword: string, newKeyword: string) => Promise<void>;
 
   importContacts: (client: IJMAPClient | null, contacts: ContactCard[]) => Promise<number>;
+
+  // Trusted senders address book
+  loadTrustedSendersBook: (client: IJMAPClient) => Promise<void>;
+  addToTrustedSendersBook: (client: IJMAPClient, email: string) => Promise<void>;
+  removeFromTrustedSendersBook: (client: IJMAPClient, email: string) => Promise<void>;
+  isTrustedAddressBookSender: (email: string) => boolean;
 }
 
 export const useContactStore = create<ContactStore>()(
@@ -128,6 +156,10 @@ export const useContactStore = create<ContactStore>()(
       isLoading: false,
       error: null,
       supportsSync: false,
+      trustedSenderEmails: [],
+      trustedSendersBookId: null,
+      trustedSendersLoaded: false,
+      trustedSendersLoading: false,
       selectedContactIds: new Set<string>(),
       lastSelectedContactId: null,
       activeTab: 'all' as const,
@@ -603,6 +635,164 @@ export const useContactStore = create<ContactStore>()(
             }));
           }
         }
+      },
+
+      renameAddressBook: async (client, addressBook, newName) => {
+        set({ error: null });
+        const trimmed = newName.trim();
+        if (!trimmed) return;
+        try {
+          const originalId = addressBook.originalId || addressBook.id;
+          const accountId = addressBook.isShared ? addressBook.accountId : undefined;
+          await client.updateAddressBook(originalId, { name: trimmed }, accountId);
+          set((state) => ({
+            addressBooks: state.addressBooks.map(b =>
+              b.id === addressBook.id ? { ...b, name: trimmed } : b
+            ),
+          }));
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Failed to rename address book';
+          set({ error: msg });
+          throw error;
+        }
+      },
+
+      removeAddressBook: async (client, addressBook) => {
+        set({ error: null });
+        try {
+          const originalId = addressBook.originalId || addressBook.id;
+          const accountId = addressBook.isShared ? addressBook.accountId : undefined;
+          await client.deleteAddressBook(originalId, accountId);
+          set((state) => ({
+            addressBooks: state.addressBooks.filter(b => b.id !== addressBook.id),
+            contacts: state.contacts.filter(c => !c.addressBookIds?.[addressBook.id]),
+          }));
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Failed to delete address book';
+          set({ error: msg });
+          throw error;
+        }
+      },
+
+      shareAddressBook: async (client, addressBook, principalId, rights) => {
+        set({ error: null });
+        try {
+          const originalId = addressBook.originalId || addressBook.id;
+          const accountId = addressBook.isShared ? addressBook.accountId : undefined;
+          await client.setAddressBookShare(originalId, principalId, rights, accountId);
+          set((state) => ({
+            addressBooks: state.addressBooks.map(b => {
+              if (b.id !== addressBook.id) return b;
+              const next = { ...(b.shareWith ?? {}) };
+              if (rights === null) delete next[principalId];
+              else next[principalId] = rights;
+              return { ...b, shareWith: next };
+            }),
+          }));
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Failed to share address book';
+          set({ error: msg });
+          throw error;
+        }
+      },
+
+      renameKeyword: async (client, oldKeyword, newKeyword) => {
+        set({ error: null });
+        const oldKw = oldKeyword.trim();
+        const newKw = newKeyword.trim();
+        if (!oldKw || !newKw || oldKw === newKw) return;
+
+        const { contacts, supportsSync } = get();
+        const affected = contacts.filter(c => c.keywords?.[oldKw]);
+
+        for (const contact of affected) {
+          const { [oldKw]: _old, ...rest } = contact.keywords || {};
+          const updatedKeywords: Record<string, boolean> = { ...rest, [newKw]: true };
+          try {
+            if (supportsSync && client) {
+              const originalId = contact.originalId || contact.id;
+              const accountId = contact.isShared ? contact.accountId : undefined;
+              await client.updateContact(originalId, { keywords: updatedKeywords }, accountId);
+            }
+            set((state) => ({
+              contacts: state.contacts.map(c =>
+                c.id === contact.id ? { ...c, keywords: updatedKeywords } : c
+              ),
+            }));
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : 'Failed to rename category';
+            set({ error: msg });
+            throw error;
+          }
+        }
+      },
+
+      loadTrustedSendersBook: async (client) => {
+        if (get().trustedSendersLoading) return;
+        set({ trustedSendersLoading: true });
+        try {
+          debug.log('contacts', 'Loading trusted senders address book');
+          const books = await client.getAddressBooks();
+          let book = books.find(b => b.name === TRUSTED_SENDERS_BOOK_NAME);
+          if (!book) {
+            debug.log('contacts', 'Creating new trusted senders address book');
+            book = await client.createAddressBook(TRUSTED_SENDERS_BOOK_NAME);
+          }
+          const bookId = book.id;
+          debug.log('contacts', 'Trusted senders book id:', bookId);
+          const contacts = await client.getContacts(bookId);
+          debug.log('contacts', 'Loaded', contacts.length, 'trusted sender contacts');
+          const emails = contacts.flatMap(c =>
+            c.emails ? Object.values(c.emails).map(e => e.address.toLowerCase().trim()) : []
+          ).filter(Boolean);
+          set({ trustedSendersBookId: bookId, trustedSenderEmails: emails, trustedSendersLoaded: true, trustedSendersLoading: false });
+        } catch (error) {
+          debug.error('Failed to load trusted senders address book:', error);
+          set({ trustedSendersLoaded: true, trustedSendersLoading: false });
+        }
+      },
+
+      addToTrustedSendersBook: async (client, email) => {
+        const normalizedEmail = email.toLowerCase().trim();
+        const { trustedSenderEmails } = get();
+        if (trustedSenderEmails.includes(normalizedEmail)) return;
+
+        let bookId = get().trustedSendersBookId;
+        if (!bookId) {
+          await get().loadTrustedSendersBook(client);
+          bookId = get().trustedSendersBookId;
+        }
+        if (!bookId) throw new Error('Could not find or create trusted senders address book');
+
+        debug.log('contacts', 'Adding trusted sender:', normalizedEmail, 'to book:', bookId);
+        await client.createContact({
+          addressBookIds: { [bookId]: true },
+          emails: { email: { address: normalizedEmail } },
+        });
+        set((state) => ({ trustedSenderEmails: [...state.trustedSenderEmails, normalizedEmail] }));
+        debug.log('contacts', 'Trusted sender added successfully');
+      },
+
+      removeFromTrustedSendersBook: async (client, email) => {
+        const normalizedEmail = email.toLowerCase().trim();
+        const { trustedSendersBookId } = get();
+        if (!trustedSendersBookId) return;
+
+        debug.log('contacts', 'Removing trusted sender:', normalizedEmail);
+        const contacts = await client.getContacts(trustedSendersBookId);
+        const match = contacts.find(c =>
+          c.emails && Object.values(c.emails).some(e => e.address.toLowerCase().trim() === normalizedEmail)
+        );
+        if (match) {
+          await client.deleteContact(match.id);
+          debug.log('contacts', 'Trusted sender removed');
+        }
+        set((state) => ({ trustedSenderEmails: state.trustedSenderEmails.filter(e => e !== normalizedEmail) }));
+      },
+
+      isTrustedAddressBookSender: (email) => {
+        const normalizedEmail = email.toLowerCase().trim();
+        return get().trustedSenderEmails.includes(normalizedEmail);
       },
 
       importContacts: async (client, contacts) => {

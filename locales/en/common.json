@@ -45,11 +45,11 @@
     "imprint": "Imprint",
     "privacy_policy": "Privacy Policy",
     "try_demo": "Try Demo",
-    "demo_description": "Explore with sample data — no account needed",
+    "demo_description": "Explore with sample data - no account needed",
     "demo_launching": "Launching demo...",
     "demo_login_button": "Launch Demo",
     "demo_tagline": "Experience a full-featured email client. No account required.",
-    "demo_no_signup": "No signup needed — explore freely with sample data",
+    "demo_no_signup": "No signup needed - explore freely with sample data",
     "oauth_completing": "Completing sign in...",
     "oauth_error": {
       "title": "Authentication Failed",
@@ -104,6 +104,13 @@
       "spam": "Spam",
       "important": "Important"
     },
+    "unified_inbox": "Unified Inbox",
+    "unified_sent": "All Sent",
+    "unified_drafts": "All Drafts",
+    "unified_trash": "All Trash",
+    "unified_archive": "All Archive",
+    "unified_junk": "All Junk",
+    "all_accounts": "All Accounts",
     "expand": "Expand",
     "collapse": "Collapse",
     "expand_tooltip": "Expand",
@@ -120,6 +127,7 @@
     "demo_tour": "Tour",
     "tags": "Tags",
     "folders": "Folders",
+    "shared": "Shared",
     "mail": "Mail",
     "nav_label": "Navigation",
     "add_app": "Apps"
@@ -176,6 +184,7 @@
     "batch_actions": {
       "select": "Select emails",
       "select_all": "Select all",
+      "selected_messages": "{count, plural, one {1 email} other {# emails}} selected",
       "mark_read": "Mark as read",
       "mark_unread": "Mark as unread",
       "delete": "Delete",
@@ -215,6 +224,11 @@
     "unstar": "Unstar",
     "mark_unread": "Mark as unread",
     "mark_read": "Mark as read",
+    "unread": "Unread",
+    "read": "Read",
+    "spam_short": "Spam",
+    "not_spam_short": "Not spam",
+    "move": "Move",
     "print": "Print",
     "view_source": "View source",
     "export_email": "Export as .eml",
@@ -298,7 +312,45 @@
         "fail": "DMARC Fail",
         "none": "No DMARC"
       },
-      "spam_score": "Spam Score"
+      "spam_score": "Spam Score",
+      "tooltip_spf": "Sender Policy Framework: Verifies that the sending server is authorized to send email on behalf of the domain",
+      "tooltip_dkim": "DomainKeys Identified Mail: Confirms the email was not altered in transit using a cryptographic signature",
+      "tooltip_dmarc": "Domain-based Message Authentication, Reporting & Conformance: Ensures SPF and DKIM align with the sender's domain and sets a policy for failures",
+      "policy": "Policy",
+      "result": {
+        "pass": "Pass",
+        "fail": "Fail",
+        "softfail": "Soft fail",
+        "neutral": "Neutral",
+        "permerror": "Permanent error",
+        "temperror": "Temporary error",
+        "none": "None"
+      }
+    },
+    "details": {
+      "recipients_routing": "Recipients & routing",
+      "authentication_security": "Authentication & security",
+      "identifiers_threading": "Identifiers & threading",
+      "mailing_list": "Mailing list",
+      "message_properties": "Message properties",
+      "sent": "Sent",
+      "received": "Received",
+      "delivery_time": "Delivery time",
+      "in_reply_to": "In-Reply-To",
+      "references": "References",
+      "thread_id": "Thread ID",
+      "size": "Size",
+      "mime_type": "MIME type",
+      "attachments_summary": "{count} files · {size}",
+      "list_id": "List ID",
+      "list_help": "List help",
+      "list_post": "List post",
+      "list_unsubscribe": "Unsubscribe",
+      "iprev": "Reverse DNS",
+      "spam_status": "Spam status",
+      "ai_verdict": "AI verdict",
+      "account": "Account",
+      "no_subject": "(no subject)"
     },
     "headers": {
       "routing": "Routing",
@@ -418,7 +470,9 @@
       "cancel_info": "The organizer has cancelled this event.",
       "event_updated": "Update #{sequence}",
       "event_status_tentative": "Tentative",
-      "event_status_cancelled": "Cancelled"
+      "event_status_cancelled": "Cancelled",
+      "expand": "Show details",
+      "collapse": "Hide details"
     },
     "send": "Send",
     "more": "more"
@@ -440,10 +494,15 @@
     "send": "Send",
     "cancel": "Cancel",
     "attach": "Attach",
+    "attach_photos": "Photos & Videos",
+    "attach_files": "Files",
     "discard": "Discard",
     "discard_draft_title": "Discard draft?",
     "discard_draft_confirm": "You have unsaved changes. Do you want to discard this draft?",
     "saving": "Saving...",
+    "sending": "Sending...",
+    "add_link": "Add link",
+    "link_url_prompt": "Enter the URL",
     "draft_saved": "Draft saved",
     "save_failed": "Failed to save",
     "to_placeholder": "Recipient email addresses",
@@ -494,7 +553,13 @@
     "smime_unlock_title": "Unlock S/MIME Key",
     "smime_unlock_message": "Enter the passphrase to unlock your S/MIME signing key.",
     "smime_unlock_button": "Unlock",
-    "smime_passphrase_placeholder": "Passphrase"
+    "smime_passphrase_placeholder": "Passphrase",
+    "forgot_attachment": {
+      "title": "Did you forget an attachment?",
+      "message": "Your message mentions \"{keyword}\" but no file is attached. Send anyway?",
+      "send_anyway": "Send anyway",
+      "back": "Back to editing"
+    }
   },
   "confirm_dialog": {
     "confirm": "Confirm",
@@ -606,7 +671,25 @@
     "switch_to_dutch": "Switch to Dutch",
     "switch_to_portuguese": "Switch to Portuguese",
     "switch_to_russian": "Switch to Russian",
-    "switching": "Changing language..."
+    "switching": "Changing language...",
+    "switch": "Switch language",
+    "current": "Current language",
+    "polish": "Polski",
+    "switch_to_polish": "Switch to Polish",
+    "en": "English",
+    "fr": "Français",
+    "de": "Deutsch",
+    "es": "Español",
+    "it": "Italiano",
+    "ja": "日本語",
+    "ko": "한국어",
+    "lv": "Latviešu",
+    "nl": "Nederlands",
+    "pl": "Polski",
+    "pt": "Português",
+    "ru": "Русский",
+    "uk": "Українська",
+    "zh": "简体中文"
   },
   "settings": {
     "title": "Settings",
@@ -633,20 +716,30 @@
       "filters": "Filters",
       "templates": "Templates",
       "folders": "Folders",
-      "keywords": "Keywords",
+      "keywords": "Tags",
       "security": "Security",
       "files": "Files",
       "contacts": "Contacts",
       "encryption": "Encryption",
       "sidebar_apps": "Sidebar Apps",
-      "notifications": "Notifications"
+      "notifications": "Notifications",
+      "layout": "Layout",
+      "reading": "Reading",
+      "composing": "Composing",
+      "content_senders": "Content & Senders",
+      "about_data": "About & Data",
+      "debug": "Debug"
     },
     "tab_groups": {
       "general": "General",
       "account": "Account & Identity",
       "organization": "Mail Organization",
       "apps": "Apps",
-      "system": "System"
+      "system": "System",
+      "appearance": "Appearance",
+      "mail": "Mail",
+      "privacy": "Privacy & Security",
+      "advanced": "Advanced"
     },
     "appearance": {
       "title": "Appearance",
@@ -698,26 +791,34 @@
       "show_rail_account_list": {
         "label": "Show Account Avatars on Navigation Rail",
         "description": "Display individual account circles at the bottom of the navigation rail for quick switching, with a sign-out button below."
+      },
+      "unified_mailbox": {
+        "label": "Unified Mailbox",
+        "description": "Show combined folders (Inbox, Sent, etc.) across all connected accounts"
+      },
+      "colorful_sidebar_icons": {
+        "label": "Colorful Sidebar Icons",
+        "description": "Tint folder and tag icons by type (blue Inbox, red Junk, green Sent, etc.). Disable for a monochrome sidebar."
       }
     },
     "keywords": {
-      "title": "Email Keywords",
-      "description": "Define keywords (labels/tags) to organize your emails with colors. These are stored as JMAP keywords on the server.",
-      "add_keyword": "Add Keyword",
+      "title": "Email Tags",
+      "description": "Define tags to organize your emails with colors. These are stored as JMAP keywords on the server.",
+      "add_keyword": "Add Tag",
       "reset_defaults": "Reset to Defaults",
       "label_field": "Display Name",
       "label_placeholder": "e.g. Work, Personal, Urgent",
-      "id_field": "Keyword ID",
+      "id_field": "Tag ID",
       "id_placeholder": "e.g. work, personal",
       "color_field": "Color",
-      "id_exists": "This keyword ID already exists",
-      "edit": "Edit keyword",
-      "delete": "Delete keyword",
+      "id_exists": "This tag ID already exists",
+      "edit": "Edit tag",
+      "delete": "Delete tag",
       "save": "Save",
       "add": "Add",
       "cancel": "Cancel",
-      "migrating": "Updating keyword on existing emails…",
-      "migration_error": "Failed to update keyword on existing emails"
+      "migrating": "Updating tag on existing emails…",
+      "migration_error": "Failed to update tag on existing emails"
     },
     "notifications": {
       "test_sound": "Test notification sound",
@@ -727,6 +828,23 @@
         "involved": "Involved",
         "swift": "Swift Gesture",
         "relax": "Relax"
+      },
+      "push": {
+        "title": "Background Notifications",
+        "description": "Receive system notifications for new mail when this site is closed. Delivered via the Bulwark push relay; the relay never sees mail content.",
+        "relay_label": "Push relay",
+        "relay_desc": "Defaults to the hosted Bulwark relay. Change only if you self-host.",
+        "relay_placeholder": "https://notifications.relay.example.com",
+        "status_active": "Active on this device",
+        "status_inactive": "Not enabled on this device",
+        "status_unsupported": "This browser does not support Web Push",
+        "status_busy": "Working…",
+        "enable": "Enable",
+        "reenable": "Re-register",
+        "disable": "Disable",
+        "confirm_disable_title": "Disable background notifications?",
+        "confirm_disable_message": "This device will stop receiving alerts when the site is closed.",
+        "ios_hint": "On iOS, install the site to your home screen first - Safari only delivers Web Push to installed PWAs."
       },
       "sound_selection": {
         "title": "Notification Sound",
@@ -839,6 +957,13 @@
         "label": "Auto-select Reply Address",
         "description": "When replying, automatically switch the From address to the identity that originally received the message"
       },
+      "sub_address_delimiter": {
+        "label": "Sub-Address Delimiter",
+        "description": "Character separating your username from a sub-address tag. Match the delimiter your mail server uses (e.g. user{delimiter}tag@domain.com).",
+        "option": "{delimiter}  (user{delimiter}tag@domain.com)",
+        "custom": "Custom…",
+        "custom_input_label": "Custom delimiter character"
+      },
       "attachment_click_action": {
         "label": "Attachment Click Action",
         "description": "Choose whether clicking a file attachment previews it or downloads it immediately",
@@ -887,7 +1012,10 @@
         "remove": "Remove",
         "close": "Close",
         "invalid_email": "Please enter a valid email address",
-        "already_added": "This sender is already trusted"
+        "already_added": "This sender is already trusted",
+        "save_error": "Failed to save - check the Contacts debug log for details",
+        "use_address_book_label": "Sync with address book",
+        "use_address_book_description": "Store trusted senders in a dedicated \"Trusted Senders\" address book so they sync across all your devices"
       },
       "hover_actions": {
         "label": "Quick Hover Actions",
@@ -914,6 +1042,23 @@
         "button": "Set as Default",
         "success": "Browser prompted to set as default",
         "error": "Your browser does not support this feature"
+      },
+      "attachment_reminder": {
+        "label": "Attachment Reminder",
+        "description": "Warn before sending when your message mentions attachments but none are attached",
+        "keywords_label": "Trigger keywords",
+        "keywords_description": "Words or phrases that trigger the reminder when found in your message",
+        "add_placeholder": "Add keyword...",
+        "add": "Add",
+        "remove": "Remove"
+      },
+      "hide_inline_image_attachments": {
+        "label": "Hide inline images from attachments",
+        "description": "Images embedded in the message body are not listed as separate attachments"
+      },
+      "attachment_image_previews": {
+        "label": "Show image previews in attachments",
+        "description": "Render image attachments as thumbnail cards instead of generic file icons"
       }
     },
     "composer": {
@@ -1024,7 +1169,14 @@
         "disabled": "Two-factor authentication disabled",
         "enable_error": "Failed to enable 2FA",
         "disable_error": "Failed to disable 2FA",
-        "setup_instructions": "Copy this URL into your authenticator app (Google Authenticator, Authy, etc.):"
+        "setup_instructions": "Copy this URL into your authenticator app (Google Authenticator, Authy, etc.):",
+        "verification_code": "Verification code",
+        "confirm": "Confirm",
+        "disable": "Disable",
+        "disable_confirm_prompt": "Enter your password to disable two-factor authentication.",
+        "password_required": "Password is required",
+        "code_required": "Verification code is required",
+        "code_invalid": "Invalid verification code. Check your authenticator app and try again."
       },
       "app_passwords": {
         "title": "App Passwords",
@@ -1032,16 +1184,34 @@
         "add": "Add",
         "create": "Create",
         "cancel": "Cancel",
+        "done": "Done",
         "generate": "Generate",
         "name_label": "App Name",
         "name_placeholder": "e.g. Thunderbird, iPhone Mail",
+        "expires_label": "Expires (optional)",
+        "allowed_ips_label": "Allowed IPs (optional)",
+        "allowed_ips_placeholder": "10.0.0.5, 192.168.1.0/24",
+        "allowed_ips_hint": "Comma- or space-separated. Leave empty to allow any IP.",
         "password_label": "Password (leave empty to auto-generate)",
         "password_placeholder": "Auto-generated if empty",
+        "copy_now_warning": "Copy this password now - it will not be shown again.",
         "added": "App password created",
         "removed": "App password removed",
         "add_error": "Failed to create app password",
         "remove_error": "Failed to remove app password",
         "none": "No app passwords configured"
+      },
+      "api_keys": {
+        "title": "API Keys",
+        "description": "Create API keys for scripts and integrations that talk to the server directly",
+        "name_label": "Key Name",
+        "name_placeholder": "e.g. Backup script, CI runner",
+        "copy_now_warning": "Copy this API key now - it will not be shown again.",
+        "added": "API key created",
+        "removed": "API key removed",
+        "add_error": "Failed to create API key",
+        "remove_error": "Failed to remove API key",
+        "none": "No API keys configured"
       },
       "encryption": {
         "section_title": "Encryption at Rest",
@@ -1119,7 +1289,7 @@
       "warnings": {
         "end_before_start": "End date must be after start date",
         "start_in_past": "Start date is in the past",
-        "empty_body": "Message body is empty — recipients will receive a blank reply"
+        "empty_body": "Message body is empty - recipients will receive a blank reply"
       }
     },
     "folders": {
@@ -1182,7 +1352,9 @@
         "email": "Email Viewing",
         "email_description": "Email rendering, TNEF processing, and mark-as-read",
         "push": "Push Notifications",
-        "push_description": "Push notification setup and delivery"
+        "push_description": "Push notification setup and delivery",
+        "contacts": "Contacts & Address Books",
+        "contacts_description": "Contact sync, address book operations, and trusted senders"
       },
       "settings_sync": {
         "label": "Settings Sync",
@@ -1191,6 +1363,10 @@
       "sender_favicons": {
         "label": "Sender Favicons (Experimental)",
         "description": "Show website icons as profile pictures for business senders"
+      },
+      "show_avatars_in_junk": {
+        "label": "Show Avatars in Junk Folder",
+        "description": "Show profile images and favicons for senders in the junk folder. Disabled by default to avoid lending visual legitimacy to phishing attempts."
       },
       "keyboard_shortcuts": {
         "label": "Keyboard Shortcuts",
@@ -1227,10 +1403,18 @@
     "contacts": {
       "title": "Contacts",
       "description": "Import and export your contacts",
+      "group_by_letter_label": "Group by first letter",
+      "group_by_letter_description": "Show alphabetical section headers in the contact list",
       "import_label": "Import Contacts",
       "import_description": "Import contacts from a vCard (.vcf) file",
       "export_label": "Export Contacts",
-      "export_description": "Export all contacts as a vCard (.vcf) file"
+      "export_description": "Export all contacts as a vCard (.vcf) file",
+      "manage_title": "Address Books",
+      "manage_description": "Rename your address books",
+      "no_address_books": "No address books found",
+      "categories_title": "Categories",
+      "categories_description": "Rename contact categories",
+      "no_categories": "No categories found"
     },
     "filters": {
       "title": "Email Filters",
@@ -1293,7 +1477,7 @@
         "forward": "Forward to",
         "mark_read": "Mark as read",
         "star": "Star message",
-        "add_label": "Add label",
+        "add_label": "Add tag",
         "discard": "Discard (delete silently)",
         "reject": "Reject with message",
         "keep": "Keep in inbox",
@@ -1305,8 +1489,8 @@
       "forward_placeholder": "email@example.com",
       "reject_message": "Rejection message",
       "reject_placeholder": "Your email has been rejected",
-      "label_name": "Label name",
-      "label_placeholder": "e.g., important",
+      "label_name": "Tag name",
+      "label_placeholder": "Select tag",
       "header_name": "Header name",
       "header_placeholder": "e.g., X-Mailing-List",
       "size_bytes": "Size in bytes",
@@ -1356,7 +1540,9 @@
       "rule_summary": {
         "conditions_count": "{count, plural, one {# condition} other {# conditions}}",
         "actions_count": "{count, plural, one {# action} other {# actions}}"
-      }
+      },
+      "origin_external": "External",
+      "managed_by_tooltip": "Managed by {source}. Edit it in that app, or use the raw Sieve editor."
     },
     "templates": {
       "title": "Email Templates",
@@ -1480,10 +1666,47 @@
     "delete": "Delete",
     "mark_as_spam": "Report spam",
     "not_spam": "Not spam",
-    "color_tag": "Label",
-    "remove_color": "Remove Label",
+    "color_tag": "Tag",
+    "remove_color": "Remove tag",
     "items_selected": "{count} emails selected",
     "edit_draft": "Edit Draft"
+  },
+  "mailbox_context_menu": {
+    "mark_folder_read": "Mark folder as read",
+    "mark_folder_tree_read": "Mark folder & subfolders as read",
+    "mark_all_folders_read": "Mark all folders as read",
+    "new_subfolder": "New subfolder...",
+    "new_folder": "New folder...",
+    "rename": "Rename...",
+    "empty_folder": "Empty folder",
+    "empty_folder_generic": "Empty folder",
+    "delete_folder": "Delete folder",
+    "refresh": "Refresh",
+    "mark_all_confirm_title": "Mark all folders as read",
+    "mark_all_confirm_message": "Mark every unread message in your personal account as read?",
+    "delete_confirm_title": "Delete folder",
+    "delete_confirm_message": "Permanently delete the folder \"{name}\"? This action cannot be undone.",
+    "prompt_new_subfolder": "Enter a name for the new subfolder.",
+    "prompt_new_folder": "Enter a name for the new folder.",
+    "prompt_rename": "Enter a new name for this folder.",
+    "placeholder_folder_name": "Folder name",
+    "create": "Create",
+    "rename_confirm": "Rename",
+    "toast_marked_read": "Folder marked as read",
+    "toast_marked_read_count": "Marked {count, plural, one {1 message} other {# messages}} as read",
+    "toast_already_read": "No unread messages",
+    "toast_marked_all_read": "All folders marked as read",
+    "toast_emptied": "Folder emptied",
+    "toast_folder_created": "Folder created",
+    "toast_folder_renamed": "Folder renamed",
+    "toast_folder_deleted": "Folder deleted",
+    "toast_error_mark_read": "Failed to mark as read",
+    "toast_error_empty": "Failed to empty folder",
+    "toast_error_create": "Failed to create folder",
+    "toast_error_rename": "Failed to rename folder",
+    "toast_error_delete": "Failed to delete folder",
+    "toast_error_delete_has_children": "Folder has subfolders. Remove them first.",
+    "toast_error_delete_has_email": "Folder is not empty. Empty it first."
   },
   "shortcuts": {
     "title": "Keyboard Shortcuts",
@@ -1590,7 +1813,7 @@
       "use_address": "Use This Address",
       "invalid_tag": "Tag must be alphanumeric and dashes only",
       "tag_too_long": "Tag must be 30 characters or less",
-      "help_text": "Emails sent to user+tag@domain.com will arrive in your inbox",
+      "help_text": "Emails sent to user{delimiter}tag@domain.com will arrive in your inbox",
       "validation": {
         "empty": "Tag cannot be empty",
         "too_long": "Tag must be {max} characters or less",
@@ -1635,6 +1858,10 @@
     "search_placeholder": "Search contacts...",
     "create_new": "New Contact",
     "no_category": "No Category",
+    "rename_category": "Rename category",
+    "category_name_label": "Category name",
+    "category_renamed": "Category renamed",
+    "category_rename_failed": "Failed to rename category",
     "category_added": "Contact added to {name}",
     "category_added_plural": "{count} contacts added to {name}",
     "empty_state": "No contacts yet",
@@ -1642,6 +1869,8 @@
     "empty_state_subtitle": "Create your first contact or import from a vCard file",
     "empty_search": "No contacts match your search",
     "empty_search_hint": "Try a different search term",
+    "empty_filtered": "No contacts match your filters",
+    "empty_filtered_hint": "Try adjusting or clearing filters",
     "clear_search": "Clear search",
     "import_vcard": "Import vCard",
     "delete_confirm_title": "Delete contact",
@@ -1661,7 +1890,19 @@
       "moved": "Contact moved to {name}",
       "moved_plural": "{count} contacts moved to {name}",
       "move_failed": "Failed to move contact",
-      "address_book": "Address Book"
+      "address_book": "Address Book",
+      "rename": "Rename address book",
+      "name_label": "Address book name",
+      "renamed": "Address book renamed",
+      "rename_failed": "Failed to rename address book",
+      "default": "Default",
+      "manage": "Manage address books",
+      "share": "Share address book",
+      "new_contact_in_book": "New contact in this address book",
+      "delete": "Delete address book",
+      "confirm_delete": "Delete \"{name}\"? All contacts in this address book will be removed.",
+      "deleted": "Address book deleted",
+      "delete_failed": "Failed to delete address book"
     },
     "detail": {
       "emails": "Email Addresses",
@@ -1713,7 +1954,33 @@
       "calendar": "Calendar",
       "calendar_uri": "Calendar URL",
       "scheduling_uri": "Scheduling URL",
-      "freebusy_uri": "Free/Busy URL"
+      "freebusy_uri": "Free/Busy URL",
+      "section_contact": "Contact details",
+      "section_work": "Work",
+      "section_personal": "Personal",
+      "email_default_label": "Email",
+      "phone_default_label": "Phone",
+      "address_default_label": "Address",
+      "online_service_default_label": "Online",
+      "organization_label": "Organization",
+      "title_label": "Title",
+      "role_label": "Role",
+      "language_label": "Language",
+      "related_default_label": "Related",
+      "more_actions": "More actions",
+      "age_years": "{count, plural, one {1 year old} other {# years old}}",
+      "years_since": "{count, plural, one {1 year} other {# years}}"
+    },
+    "activity": {
+      "recent_emails": "Recent Emails",
+      "upcoming_events": "Upcoming Events",
+      "no_emails": "No recent emails",
+      "no_events": "No upcoming events",
+      "no_subject": "(No subject)",
+      "no_title": "(No title)",
+      "load_failed": "Failed to load",
+      "unknown_sender": "Unknown sender",
+      "all_day": "All day"
     },
     "form": {
       "create_title": "New Contact",
@@ -1809,7 +2076,13 @@
       "email_invalid": "Please enter a valid email address",
       "email_error_inline": "Invalid email format",
       "save_failed": "Failed to save contact",
-      "delete": "Delete"
+      "delete": "Delete",
+      "upload_photo": "Upload photo",
+      "remove_photo": "Remove photo",
+      "photo_hint": "JPG or PNG, up to 10 MB. Will be resized.",
+      "photo_too_large": "Image is too large (max 10 MB)",
+      "photo_invalid": "Invalid image file",
+      "change_photo": "Change"
     },
     "groups": {
       "create": "New Group",
@@ -1869,6 +2142,37 @@
       "error_create": "Failed to create contact",
       "error_update": "Failed to update contact",
       "error_delete": "Failed to delete contact"
+    },
+    "context_menu": {
+      "open": "Open",
+      "edit": "Edit",
+      "send_email": "Send email",
+      "add_to_group": "Add to group",
+      "export_vcard": "Export as vCard",
+      "delete": "Delete",
+      "call": "Call",
+      "duplicate": "Duplicate",
+      "print": "Print"
+    },
+    "filters": {
+      "toggle": "Filters",
+      "select": "Select",
+      "clear": "Clear",
+      "close": "Close",
+      "title": "Advanced filters",
+      "organization": "Company",
+      "organization_placeholder": "e.g. Acme Corp",
+      "job_title": "Job title",
+      "job_title_placeholder": "e.g. Designer",
+      "location": "Location",
+      "location_placeholder": "City or country",
+      "email_domain": "Email domain",
+      "email_domain_placeholder": "example.com",
+      "birthday_month": "Birthday in",
+      "any_month": "Any month",
+      "has_email": "Has email",
+      "has_phone": "Has phone",
+      "has_photo": "Has photo"
     }
   },
   "calendar": {
@@ -1903,7 +2207,14 @@
       "resize": "Resize event",
       "duplicate": "Duplicate",
       "today_header": "Today",
-      "tomorrow_header": "Tomorrow"
+      "tomorrow_header": "Tomorrow",
+      "export_ics": "Export as .ics",
+      "copy_title": "Copy title",
+      "copy_link": "Copy meeting link",
+      "new_event": "New event",
+      "new_all_day_event": "New all-day event",
+      "new_task": "New task",
+      "go_to_today": "Go to today"
     },
     "detail": {
       "add_note": "Add a note...",
@@ -1941,6 +2252,7 @@
       "tentative": "Tentative",
       "needs_action": "Needs action",
       "remove": "Remove",
+      "edit": "Edit",
       "email_placeholder": "Add email address or search contacts",
       "send_invitations": "Send invitations to participants",
       "status_summary": "{accepted} accepted, {pending} pending",
@@ -2034,6 +2346,20 @@
       "sat": "Sat",
       "sun": "Sun"
     },
+    "months": {
+      "jan": "Jan",
+      "feb": "Feb",
+      "mar": "Mar",
+      "apr": "Apr",
+      "may": "May",
+      "jun": "Jun",
+      "jul": "Jul",
+      "aug": "Aug",
+      "sep": "Sep",
+      "oct": "Oct",
+      "nov": "Nov",
+      "dec": "Dec"
+    },
     "notifications": {
       "event_created": "Event created",
       "event_updated": "Event updated",
@@ -2050,7 +2376,10 @@
       "rsvp_error": "Failed to update response",
       "event_duplicated": "Event duplicated",
       "event_error": "Failed to save event",
-      "task_due": "Task due"
+      "task_due": "Task due",
+      "event_exported": "Event exported",
+      "title_copied": "Title copied",
+      "link_copied": "Link copied"
     },
     "status": {
       "loading_calendars": "Loading calendars...",
@@ -2116,7 +2445,9 @@
       "error_delete": "Failed to delete calendar",
       "caldav_url": "CalDAV URL",
       "copy_url": "Copy CalDAV URL",
-      "url_copied": "CalDAV URL copied to clipboard"
+      "url_copied": "CalDAV URL copied to clipboard",
+      "share": "Share calendar",
+      "new_event_in_calendar": "New event in this calendar"
     },
     "subscription": {
       "title": "iCal Subscription",
@@ -2198,6 +2529,29 @@
       "overdue": "Overdue"
     }
   },
+  "sharing": {
+    "title": "Share \"{name}\"",
+    "description": "Grant access to other users or groups on this server. Changes take effect immediately.",
+    "no_shares": "Not shared with anyone yet.",
+    "add_person": "Add person or group",
+    "search_placeholder": "Search by name or email…",
+    "loading_principals": "Loading users…",
+    "no_principals": "No other users or groups found.",
+    "no_match": "No matches.",
+    "remove": "Remove access",
+    "group": "Group",
+    "share_added": "Access granted",
+    "share_updated": "Access updated",
+    "share_removed": "Access removed",
+    "share_failed": "Failed to update sharing",
+    "preset": {
+      "freeBusy": "Free/busy only",
+      "read": "Read only",
+      "readWrite": "Read & write",
+      "manager": "Manager",
+      "custom": "Custom"
+    }
+  },
   "advanced_search": {
     "title": "Advanced Search",
     "from": "From",
@@ -2241,7 +2595,7 @@
   },
   "demo_welcome": {
     "title": "Welcome to Bulwark Mail",
-    "description": "Explore a fully-featured webmail client — right in your browser. All data stays on your device, so feel free to test everything.",
+    "description": "Explore a fully-featured webmail client - right in your browser. All data stays on your device, so feel free to test everything.",
     "feature_email": "Read & compose email",
     "feature_organize": "Tags, stars & folders",
     "feature_shortcuts": "Keyboard shortcuts",
@@ -2468,16 +2822,19 @@
     "create_event_title": "Create an event",
     "create_event_desc": "Click this button to create a new calendar event. You can set a title, date, time, and add participants.",
     "event_modal_title": "Event details",
-    "event_modal_desc": "Here's the event form. Fill in the title, pick a date and time, add a location or participants. Hit save when you're done — or close it and move on.",
+    "event_modal_desc": "Here's the event form. Fill in the title, pick a date and time, add a location or participants. Hit save when you're done - or close it and move on.",
     "contacts_list_title": "Your contacts",
     "contacts_list_desc": "Here are your contacts. Click any contact to see their full details on the right. You can also create new contacts, import vCards, or organize contacts into groups.",
     "settings_tabs_title": "Settings menu",
     "settings_tabs_desc": "Here are all the settings categories. Customize your appearance, manage identities, set up email filters, configure your calendar, and much more.",
     "files_title": "File storage",
-    "files_desc": "Your file browser lets you upload, organize, and share files — like a personal cloud drive built into your mail.",
+    "files_desc": "Your file browser lets you upload, organize, and share files - like a personal cloud drive built into your mail.",
     "demo_banner_title": "Demo controls",
-    "demo_banner_desc": "You're in demo mode — everything stays in your browser. Hit 'Reset Demo' anytime to start fresh with clean sample data.",
+    "demo_banner_desc": "You're in demo mode - everything stays in your browser. Hit 'Reset Demo' anytime to start fresh with clean sample data.",
     "quota_title": "Storage usage",
     "quota_desc": "Track your mailbox size here. The circle fills up as you use more space."
+  },
+  "unified_mailbox": {
+    "search_unavailable": "Search is not available in the unified view"
   }
 }

@@ -22,6 +22,8 @@ interface CalendarWeekViewProps {
   onSelectEvent: (event: CalendarEvent, anchorRect: DOMRect) => void;
   onHoverEvent?: (event: CalendarEvent, anchorRect: DOMRect) => void;
   onHoverLeave?: () => void;
+  onContextMenuEvent?: (e: React.MouseEvent, event: CalendarEvent) => void;
+  onContextMenuEmpty?: (e: React.MouseEvent, date: Date, hour?: number, allDayArea?: boolean) => void;
   onCreateAtTime: (date: Date, endDate?: Date) => void;
   firstDayOfWeek?: number;
   timeFormat?: "12h" | "24h";
@@ -42,6 +44,8 @@ export function CalendarWeekView({
   onSelectEvent,
   onHoverEvent,
   onHoverLeave,
+  onContextMenuEvent,
+  onContextMenuEmpty,
   onCreateAtTime,
   firstDayOfWeek = 1,
   timeFormat = "24h",
@@ -181,6 +185,7 @@ export function CalendarWeekView({
       created: t("notifications.event_created"),
       error: t("notifications.event_error"),
     },
+    isMobile,
   });
 
   const formatHour = (h: number): string => {
@@ -216,7 +221,11 @@ export function CalendarWeekView({
             style={{ minHeight: Math.max(28, (allDayRowCount + taskRowCount) * 24 + 4) }}
           >
             {weekDays.map((day) => (
-              <div key={format(day, "yyyy-MM-dd")} className="bg-background min-h-[28px]" />
+              <div
+                key={format(day, "yyyy-MM-dd")}
+                className="bg-background min-h-[28px]"
+                onContextMenu={onContextMenuEmpty ? (e) => onContextMenuEmpty(e, day, undefined, true) : undefined}
+              />
             ))}
 
             <div className="absolute inset-0 pointer-events-none">
@@ -242,6 +251,7 @@ export function CalendarWeekView({
                       onClick={(rect) => onSelectEvent(segment.event, rect)}
                       onMouseEnter={(rect) => onHoverEvent?.(segment.event, rect)}
                       onMouseLeave={onHoverLeave}
+                      onContextMenu={onContextMenuEvent}
                     />
                   </div>
                 );
@@ -374,6 +384,7 @@ export function CalendarWeekView({
                       aria-label={`${intlFormatter.dateTime(day, { weekday: "short" })} ${formatHour(h)}`}
                       onClick={() => handleSlotClick(day, h)}
                       onDoubleClick={() => handleSlotDoubleClick(day, h)}
+                      onContextMenu={onContextMenuEmpty ? (e) => onContextMenuEmpty(e, day, h, false) : undefined}
                       className="border-b border-border/50 hover:bg-muted/30 cursor-pointer transition-colors"
                       style={{ height: HOUR_HEIGHT }}
                     />
@@ -381,9 +392,11 @@ export function CalendarWeekView({
 
                   {layouted.map(({ event: ev, column, totalColumns, startMinutes, endMinutes }) => {
                     const durMin = Math.max(15, endMinutes - startMinutes);
-                    const top = (startMinutes / 60) * HOUR_HEIGHT;
+                    const baseTop = (startMinutes / 60) * HOUR_HEIGHT;
                     const baseHeight = Math.max(20, (durMin / 60) * HOUR_HEIGHT);
-                    const height = resizeVisual?.eventId === ev.id ? resizeVisual.heightPx : baseHeight;
+                    const isResizing = resizeVisual?.eventId === ev.id;
+                    const top = isResizing ? resizeVisual!.topPx : baseTop;
+                    const height = isResizing ? resizeVisual!.heightPx : baseHeight;
                     const calId = getPrimaryCalendarId(ev);
                     const leftPct = (column / totalColumns) * 100;
                     const widthPct = (1 / totalColumns) * 100;
@@ -402,13 +415,24 @@ export function CalendarWeekView({
                           onClick={(rect) => onSelectEvent(ev, rect)}
                           onMouseEnter={(rect) => onHoverEvent?.(ev, rect)}
                           onMouseLeave={onHoverLeave}
+                          onContextMenu={onContextMenuEvent}
                           draggable
                         />
                         <div
                           data-resize-handle
+                          className="absolute top-0 left-1 right-1 h-3 cursor-n-resize z-20 flex items-start justify-center opacity-0 group-hover/event:opacity-100 transition-opacity"
+                          aria-label={t("events.resize")}
+                          onPointerDown={(e) => handleResizePointerDown(ev.id, "top", startMinutes, durMin, e)}
+                          onPointerMove={handleResizePointerMove}
+                          onPointerUp={handleResizePointerUp}
+                        >
+                          <div className="w-8 h-1 rounded-full bg-foreground/30 mt-0.5" />
+                        </div>
+                        <div
+                          data-resize-handle
                           className="absolute bottom-0 left-1 right-1 h-3 cursor-s-resize z-20 flex items-end justify-center opacity-0 group-hover/event:opacity-100 transition-opacity"
                           aria-label={t("events.resize")}
-                          onPointerDown={(e) => handleResizePointerDown(ev.id, durMin, e)}
+                          onPointerDown={(e) => handleResizePointerDown(ev.id, "bottom", startMinutes, durMin, e)}
                           onPointerMove={handleResizePointerMove}
                           onPointerUp={handleResizePointerUp}
                         >

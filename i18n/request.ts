@@ -11,6 +11,9 @@ export default getRequestConfig(async ({ requestLocale }) => {
   // Use static imports for better compatibility
   let messages;
   switch (locale) {
+    case 'cs':
+      messages = (await import('../locales/cs/common.json')).default;
+      break;
     case 'fr':
       messages = (await import('../locales/fr/common.json')).default;
       break;
@@ -29,6 +32,9 @@ export default getRequestConfig(async ({ requestLocale }) => {
     case 'ko':
       messages = (await import('../locales/ko/common.json')).default;
       break;
+    case 'lv':
+      messages = (await import('../locales/lv/common.json')).default;
+      break;
     case 'nl':
       messages = (await import('../locales/nl/common.json')).default;
       break;
@@ -40,6 +46,12 @@ export default getRequestConfig(async ({ requestLocale }) => {
       break;
     case 'ru':
       messages = (await import('../locales/ru/common.json')).default;
+      break;
+    case 'tr':
+      messages = (await import('../locales/tr/common.json')).default;
+      break;
+    case 'uk':
+      messages = (await import('../locales/uk/common.json')).default;
       break;
     case 'zh':
       messages = (await import('../locales/zh/common.json')).default;

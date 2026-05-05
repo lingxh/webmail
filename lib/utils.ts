@@ -1,6 +1,7 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
-import { Mailbox } from "./jmap/types";
+import { Mailbox, UNIFIED_MAILBOX_IDS } from "./jmap/types";
+import type { UnifiedMailboxRole } from "./jmap/types";
 import { debug } from "./debug";
 
 export function cn(...inputs: ClassValue[]) {
@@ -138,7 +139,7 @@ function deduplicateMailboxes(mailboxes: Mailbox[]): Mailbox[] {
       return;
     }
 
-    // Never deduplicate nested mailboxes — only root-level folders can be
+    // Never deduplicate nested mailboxes - only root-level folders can be
     // duplicates of role-based mailboxes. Removing a nested folder that happens
     // to share a name with a role folder (e.g. a subfolder named "Sent") would
     // orphan its children to root level. (GitHub #118)
@@ -257,7 +258,10 @@ export function buildMailboxTree(mailboxes: Mailbox[]): MailboxNode[] {
     `total own: ${ownMailboxes.length}, shared: ${sharedMailboxes.length}`
   );
 
-  // If we have shared mailboxes, create a virtual "Shared Folders" parent
+  // For each shared account, create a virtual top-level account node
+  // containing that account's mailboxes. This places shared accounts as
+  // peers of the primary account's folders rather than nesting them under
+  // a "Shared Folders" wrapper. (GitHub #151)
   if (sharedMailboxes.length > 0) {
     // Group shared mailboxes by account
     const accountGroups = new Map<string, Mailbox[]>();
@@ -269,20 +273,16 @@ export function buildMailboxTree(mailboxes: Mailbox[]): MailboxNode[] {
       accountGroups.get(accountId)!.push(mb);
     });
 
-    // Create virtual nodes for each shared account
-    const sharedAccountNodes: MailboxNode[] = [];
-
     accountGroups.forEach((accountMailboxes, accountId) => {
-      // Create account nodes
+      // Create nodes for this account's mailboxes
       const accountMailboxMap = new Map<string, MailboxNode>();
       const accountRootNodes: MailboxNode[] = [];
 
-      // Create nodes for this account's mailboxes
       accountMailboxes.forEach(mailbox => {
         accountMailboxMap.set(mailbox.id, {
           ...mailbox,
           children: [],
-          depth: 2 // Account level is depth 1, these are depth 2
+          depth: 0,
         });
       });
 
@@ -298,10 +298,13 @@ export function buildMailboxTree(mailboxes: Mailbox[]): MailboxNode[] {
         }
       });
 
-      // Correctly calculate depths from account root level down
-      recalculateDepths(accountRootNodes, 2);
+      // Render the shared account's mailboxes flush with primary-account
+      // mailboxes (depth 0) so the indents line up. The virtual account
+      // node visually wraps them via its chevron/header rather than via
+      // an extra indent level. (GitHub #151)
+      recalculateDepths(accountRootNodes, 0);
 
-      // Create virtual account folder node
+      // Create virtual account folder node at top level (depth 0)
       const accountName = accountMailboxes[0]?.accountName || accountId;
       const accountNode: MailboxNode = {
         id: `shared-account-${accountId}`,
@@ -327,39 +330,11 @@ export function buildMailboxTree(mailboxes: Mailbox[]): MailboxNode[] {
         accountName: accountName,
         isShared: true,
         children: accountRootNodes,
-        depth: 1,
+        depth: 0,
       };
 
-      sharedAccountNodes.push(accountNode);
+      rootMailboxes.push(accountNode);
     });
-
-    // Create virtual "Shared Folders" root node
-    const sharedFoldersNode: MailboxNode = {
-      id: 'shared-folders-root',
-      name: 'Shared Folders',
-      sortOrder: 999, // After all own folders
-      totalEmails: sharedMailboxes.reduce((sum, mb) => sum + mb.totalEmails, 0),
-      unreadEmails: sharedMailboxes.reduce((sum, mb) => sum + mb.unreadEmails, 0),
-      totalThreads: 0,
-      unreadThreads: 0,
-      myRights: {
-        mayReadItems: true,
-        mayAddItems: false,
-        mayRemoveItems: false,
-        maySetSeen: false,
-        maySetKeywords: false,
-        mayCreateChild: false,
-        mayRename: false,
-        mayDelete: false,
-        maySubmit: false,
-      },
-      isSubscribed: true,
-      isShared: true,
-      children: sharedAccountNodes,
-      depth: 0,
-    };
-
-    rootMailboxes.push(sharedFoldersNode);
   }
 
   // Smart multi-level sorting
@@ -406,6 +381,39 @@ export function buildMailboxTree(mailboxes: Mailbox[]): MailboxNode[] {
   return rootMailboxes;
 }
 
+/**
+ * Builds virtual MailboxNode entries for unified mailbox roles with aggregated counts.
+ */
+export function buildUnifiedMailboxNodes(
+  counts: Array<{ role: UnifiedMailboxRole; unreadEmails: number; totalEmails: number }>,
+): MailboxNode[] {
+  return counts.map((count) => ({
+    id: UNIFIED_MAILBOX_IDS[count.role],
+    name: count.role, // Display name is handled by i18n in the component
+    role: count.role,
+    parentId: undefined,
+    sortOrder: 0,
+    totalEmails: count.totalEmails,
+    unreadEmails: count.unreadEmails,
+    totalThreads: 0,
+    unreadThreads: 0,
+    myRights: {
+      mayReadItems: true,
+      mayAddItems: false,
+      mayRemoveItems: false,
+      maySetSeen: true,
+      maySetKeywords: true,
+      mayCreateChild: false,
+      mayRename: false,
+      mayDelete: false,
+      maySubmit: false,
+    },
+    isSubscribed: true,
+    children: [],
+    depth: 0,
+  }));
+}
+
 // Flatten a mailbox tree for rendering with proper depth info
 export function flattenMailboxTree(nodes: MailboxNode[]): MailboxNode[] {
   const result: MailboxNode[] = [];
@@ -421,4 +429,23 @@ export function flattenMailboxTree(nodes: MailboxNode[]): MailboxNode[] {
 
   traverse(nodes);
   return result;
+}
+
+export function getMailboxPath(
+  mailbox: Pick<Mailbox, 'id' | 'name' | 'parentId'>,
+  allMailboxes: Array<Pick<Mailbox, 'id' | 'name' | 'parentId'>>,
+  separator = ' › ',
+): string {
+  const byId = new Map(allMailboxes.map(m => [m.id, m]));
+  const names: string[] = [mailbox.name];
+  const visited = new Set<string>([mailbox.id]);
+  let parentId = mailbox.parentId;
+  while (parentId && !visited.has(parentId)) {
+    visited.add(parentId);
+    const parent = byId.get(parentId);
+    if (!parent) break;
+    names.unshift(parent.name);
+    parentId = parent.parentId;
+  }
+  return names.join(separator);
 }

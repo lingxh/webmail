@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowRight,
   Calendar,
@@ -15,6 +16,7 @@ import {
   X,
   AlertCircle,
   ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useTranslations, useFormatter } from 'next-intl';
 import { useRouter } from '@/i18n/navigation';
@@ -370,8 +372,11 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
   const [actionError, setActionError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showCalendarPicker, setShowCalendarPicker] = useState(false);
+  const [pickerPosition, setPickerPosition] = useState<{ top: number; left: number } | null>(null);
+  const pickerTriggerRef = useRef<HTMLButtonElement>(null);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [rawIcsMethod, setRawIcsMethod] = useState<InvitationMethod>('unknown');
+  const [isCollapsed, setIsCollapsed] = useState(true);
 
   const attachment = findCalendarAttachment(email);
 
@@ -435,6 +440,17 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
     }
   }, [calendars, selectedCalendarId]);
 
+  useEffect(() => {
+    if (!showCalendarPicker) return;
+    const close = () => setShowCalendarPicker(false);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [showCalendarPicker]);
+
   if (!attachment || !calendarInvitationParsingEnabled) return null;
 
   const detectedMethod = parsedEvent ? getInvitationMethod(parsedEvent, { email, attachment }) : 'unknown';
@@ -442,6 +458,8 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
   const summary = parsedEvent ? formatEventSummary(parsedEvent) : null;
   const isCancellation = method === 'cancel';
   const isResponseOnly = method === 'reply' || method === 'refresh' || method === 'counter' || method === 'declinecounter';
+  const canCollapse = method === 'reply';
+  const showDetails = !canCollapse || !isCollapsed;
   const allowsRsvp = method === 'request';
   const allowsImport = method === 'request' || method === 'publish' || method === 'add' || method === 'unknown';
 
@@ -527,7 +545,7 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
       || null;
 
     // Send the iMIP REPLY email to the organizer (client-side scheduling).
-    // Called after updating the local calendar event. Best-effort — if it
+    // Called after updating the local calendar event. Best-effort - if it
     // fails we still report the RSVP as sent since the calendar was updated.
     const sendImipReply = async () => {
       if (!organizerEmail || !parsedEvent?.uid || !currentUserEmail) {
@@ -750,9 +768,22 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
           )}
           <span className="text-sm font-medium text-foreground truncate">{bannerTitle}</span>
         </div>
+        {canCollapse && (
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((prev) => !prev)}
+            aria-expanded={!isCollapsed}
+            aria-label={isCollapsed ? t('expand') : t('collapse')}
+            title={isCollapsed ? t('expand') : t('collapse')}
+            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors flex-shrink-0"
+          >
+            {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+          </button>
+        )}
       </div>
 
       {/* Content */}
+      {showDetails && (
       <div className="px-4 py-3 space-y-2.5">
         <div className="lg:flex lg:gap-6">
           {/* Left: Event info */}
@@ -894,8 +925,10 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
           </div>
         )}
       </div>
+      )}
 
       {/* Actions */}
+      {showDetails && (
       <div className="px-4 py-2.5 border-t border-border bg-muted/20 flex items-center gap-2 flex-wrap">
         {canRespond && (
           <>
@@ -947,14 +980,23 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
         )}
 
         {supportsCalendar && !existingEvent && allowsImport && !isResponseOnly && !isCancellation && (
-          <div className="relative">
+          <>
             <button
+              ref={pickerTriggerRef}
               onClick={() => {
                 if (calendars.length <= 1) {
                   handleImport();
-                } else {
-                  setShowCalendarPicker(!showCalendarPicker);
+                  return;
                 }
+                if (showCalendarPicker) {
+                  setShowCalendarPicker(false);
+                  return;
+                }
+                if (pickerTriggerRef.current) {
+                  const rect = pickerTriggerRef.current.getBoundingClientRect();
+                  setPickerPosition({ top: rect.bottom + 4, left: rect.left });
+                }
+                setShowCalendarPicker(true);
               }}
               disabled={isProcessing}
               className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-md border border-border hover:bg-muted transition-colors min-h-[36px] disabled:opacity-50"
@@ -964,8 +1006,11 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
               {calendars.length > 1 && <ChevronDown className="w-3 h-3" />}
             </button>
 
-            {showCalendarPicker && calendars.length > 1 && (
-              <div className="absolute left-0 top-full mt-1 w-52 bg-background rounded-lg shadow-lg border border-border z-10 py-1">
+            {showCalendarPicker && calendars.length > 1 && pickerPosition && typeof document !== 'undefined' && createPortal(
+              <div
+                className="fixed w-52 bg-background rounded-lg shadow-lg border border-border z-50 py-1"
+                style={{ top: pickerPosition.top, left: pickerPosition.left }}
+              >
                 <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
                   {t('select_calendar')}
                 </div>
@@ -985,9 +1030,10 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
                     <span className="truncate text-foreground">{cal.name}</span>
                   </button>
                 ))}
-              </div>
+              </div>,
+              document.body,
             )}
-          </div>
+          </>
         )}
 
         {canApplyProposal && (
@@ -1020,6 +1066,7 @@ export function CalendarInvitationBanner({ email }: CalendarInvitationBannerProp
           <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
         )}
       </div>
+      )}
     </div>
   );
 }

@@ -4,6 +4,14 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# Optional: serve under a subpath like /webmail. Baked into emitted asset URLs
+# at build time, so it cannot be changed without rebuilding.
+ARG NEXT_PUBLIC_BASE_PATH=
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
+# Commit SHA shown in the About screen. .dockerignore excludes .git, so
+# `git rev-parse` inside the build can't find it — CI must pass it in.
+ARG GIT_COMMIT=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
 RUN npx next build --webpack
 
 FROM node:24-alpine AS runner
@@ -26,7 +34,7 @@ RUN apk upgrade --no-cache && \
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-RUN mkdir -p /app/data/settings /app/data/admin && chown -R nextjs:nodejs /app/data
+RUN mkdir -p /app/data/settings /app/data/admin /app/data/telemetry && chown -R nextjs:nodejs /app/data
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000

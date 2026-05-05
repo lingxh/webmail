@@ -3,6 +3,11 @@ import { persist } from 'zustand/middleware';
 import { useThemeStore } from './theme-store';
 import { useLocaleStore } from './locale-store';
 import type { NotificationSoundChoice } from '@/lib/notification-sound';
+import { apiFetch } from '@/lib/browser-navigation';
+import {
+  DEFAULT_SUB_ADDRESS_DELIMITER,
+  isValidSubAddressDelimiter,
+} from '@/lib/sub-addressing';
 
 // Use console directly to avoid circular dependency with lib/debug.ts
 // (debug.ts imports useSettingsStore for debugMode check)
@@ -49,7 +54,7 @@ export const ALL_HOVER_ACTIONS: { id: HoverAction; labelKey: string }[] = [
   { id: 'spam', labelKey: 'spam' },
 ];
 
-export type DebugCategory = 'jmap' | 'calendar' | 'tasks' | 'auth' | 'filters' | 'email' | 'push';
+export type DebugCategory = 'jmap' | 'calendar' | 'tasks' | 'auth' | 'filters' | 'email' | 'push' | 'contacts';
 
 export const ALL_DEBUG_CATEGORIES: { id: DebugCategory; labelKey: string }[] = [
   { id: 'jmap', labelKey: 'jmap' },
@@ -59,6 +64,7 @@ export const ALL_DEBUG_CATEGORIES: { id: DebugCategory; labelKey: string }[] = [
   { id: 'filters', labelKey: 'filters' },
   { id: 'email', labelKey: 'email' },
   { id: 'push', labelKey: 'push' },
+  { id: 'contacts', labelKey: 'contacts' },
 ];
 
 export interface KeywordDefinition {
@@ -136,10 +142,12 @@ interface SettingsState {
   defaultReplyMode: ReplyMode;
   autoSelectReplyIdentity: boolean;
   plainTextMode: boolean; // Send plain text only (no rich text editor)
+  subAddressDelimiter: string; // Character separating user from tag (e.g. "user+tag@")
 
   // Privacy & Security
   sessionTimeout: number; // minutes (0 = never)
   trustedSenders: string[]; // Email addresses that can load external content
+  trustedSendersAddressBook: boolean; // Store trusted senders in a dedicated JMAP address book
 
   // Filters
   expandedFilterView: boolean;
@@ -157,6 +165,9 @@ interface SettingsState {
   showBirthdayCalendar: boolean;
   birthdayCalendarColor: string;
 
+  // Contacts Display
+  groupContactsByLetter: boolean;
+
   // Email Notifications
   emailNotificationsEnabled: boolean;
   emailNotificationSound: boolean;
@@ -173,17 +184,36 @@ interface SettingsState {
   hideAccountSwitcher: boolean;
   showRailAccountList: boolean;
 
+  // Unified Mailbox
+  enableUnifiedMailbox: boolean;
+
   // Email Display
   disableThreading: boolean; // Show emails as individual messages instead of grouped by conversation
 
   // Experimental
   senderFavicons: boolean;
+  showAvatarsInJunk: boolean; // Show profile images/favicons in the junk folder
+
+  // Sidebar
+  colorfulSidebarIcons: boolean; // Tint folder icons by role (inbox blue, junk red, etc.)
 
   // Folders
   folderIcons: Record<string, string>; // mailboxId -> icon name
 
   // Keywords (labels/tags)
   emailKeywords: KeywordDefinition[];
+
+  // Attachment Reminder
+  attachmentReminderEnabled: boolean;
+  attachmentReminderKeywords: string[];
+
+  // Hide inline images (images referenced by cid in the HTML body) from the
+  // attachment list shown above the message body.
+  hideInlineImageAttachments: boolean;
+
+  // Render image attachments as thumbnail cards (preview the actual image
+  // contents inside the chip) instead of generic file icons.
+  attachmentImagePreviewsEnabled: boolean;
 
   // Sidebar Apps
   sidebarApps: SidebarApp[];
@@ -265,10 +295,12 @@ const DEFAULT_SETTINGS = {
   defaultReplyMode: 'reply' as ReplyMode,
   autoSelectReplyIdentity: false,
   plainTextMode: false,
+  subAddressDelimiter: DEFAULT_SUB_ADDRESS_DELIMITER,
 
   // Privacy & Security
   sessionTimeout: 0, // Never
   trustedSenders: [] as string[],
+  trustedSendersAddressBook: false,
 
   // Filters
   expandedFilterView: false,
@@ -286,6 +318,9 @@ const DEFAULT_SETTINGS = {
   showBirthdayCalendar: false,
   birthdayCalendarColor: '#eab308',
 
+  // Contacts Display
+  groupContactsByLetter: true,
+
   // Email Notifications
   emailNotificationsEnabled: true,
   emailNotificationSound: true,
@@ -302,17 +337,58 @@ const DEFAULT_SETTINGS = {
   hideAccountSwitcher: false,
   showRailAccountList: false,
 
+  // Unified Mailbox
+  enableUnifiedMailbox: false,
+
   // Email Display
   disableThreading: false,
 
   // Experimental
   senderFavicons: true,
+  showAvatarsInJunk: false,
+
+  // Sidebar
+  colorfulSidebarIcons: true,
 
   // Folders
   folderIcons: {} as Record<string, string>,
 
   // Keywords
   emailKeywords: DEFAULT_KEYWORDS,
+
+  // Attachment Reminder
+  attachmentReminderEnabled: true,
+  attachmentReminderKeywords: [
+    // English
+    'attached', 'attachment', 'attachments', 'see attached', 'find attached', 'please find attached',
+    // German
+    'angehängt', 'anhang', 'anbei', 'im anhang',
+    // French
+    'ci-joint', 'pièce jointe',
+    // Spanish
+    'adjunto', 'adjunta', 'en adjunto',
+    // Italian
+    'allegato', 'in allegato',
+    // Dutch
+    'bijgevoegd', 'bijlage',
+    // Portuguese
+    'em anexo', 'anexo',
+    // Polish
+    'w załączniku',
+    // Russian
+    'во вложении',
+    // Japanese
+    '添付',
+    // Chinese
+    '附件',
+    // Korean
+    '첨부',
+    // Latvian
+    'pielikumā',
+  ] as string[],
+
+  hideInlineImageAttachments: true,
+  attachmentImagePreviewsEnabled: true,
 
   // Sidebar Apps
   sidebarApps: [] as SidebarApp[],
@@ -391,6 +467,7 @@ export const useSettingsStore = create<SettingsState>()(
           defaultReplyMode: state.defaultReplyMode,
           autoSelectReplyIdentity: state.autoSelectReplyIdentity,
           plainTextMode: state.plainTextMode,
+          subAddressDelimiter: state.subAddressDelimiter,
           sessionTimeout: state.sessionTimeout,
           emailNotificationsEnabled: state.emailNotificationsEnabled,
           emailNotificationSound: state.emailNotificationSound,
@@ -402,6 +479,7 @@ export const useSettingsStore = create<SettingsState>()(
           showTasksOnCalendar: state.showTasksOnCalendar,
           showBirthdayCalendar: state.showBirthdayCalendar,
           birthdayCalendarColor: state.birthdayCalendarColor,
+          groupContactsByLetter: state.groupContactsByLetter,
           expandedFilterView: state.expandedFilterView,
           showTimeInMonthView: state.showTimeInMonthView,
           showWeekNumbers: state.showWeekNumbers,
@@ -409,9 +487,16 @@ export const useSettingsStore = create<SettingsState>()(
           toolbarPosition: state.toolbarPosition,
           hideAccountSwitcher: state.hideAccountSwitcher,
           showRailAccountList: state.showRailAccountList,
+          enableUnifiedMailbox: state.enableUnifiedMailbox,
           senderFavicons: state.senderFavicons,
+          showAvatarsInJunk: state.showAvatarsInJunk,
+          colorfulSidebarIcons: state.colorfulSidebarIcons,
           folderIcons: state.folderIcons,
           emailKeywords: state.emailKeywords,
+          attachmentReminderEnabled: state.attachmentReminderEnabled,
+          attachmentReminderKeywords: state.attachmentReminderKeywords,
+          hideInlineImageAttachments: state.hideInlineImageAttachments,
+          attachmentImagePreviewsEnabled: state.attachmentImagePreviewsEnabled,
           sidebarApps: state.sidebarApps,
           keepAppsLoaded: state.keepAppsLoaded,
           debugMode: state.debugMode,
@@ -436,6 +521,9 @@ export const useSettingsStore = create<SettingsState>()(
           // Apply settings
           Object.keys(settings).forEach((key) => {
             if (key in DEFAULT_SETTINGS) {
+              if (key === 'subAddressDelimiter' && !isValidSubAddressDelimiter(settings[key])) {
+                return;
+              }
               set({ [key]: settings[key] });
             }
           });
@@ -571,7 +659,7 @@ export const useSettingsStore = create<SettingsState>()(
       loadFromServer: async (username: string, serverUrl: string) => {
         try {
           syncLog('Loading settings from server for', username);
-          const res = await fetch('/api/settings', {
+          const res = await apiFetch('/api/settings', {
             headers: {
               'x-settings-username': username,
               'x-settings-server': serverUrl,
@@ -707,7 +795,7 @@ if (typeof window !== 'undefined') {
   const syncToServer = async (retries = 1): Promise<void> => {
     const settings = JSON.parse(useSettingsStore.getState().exportSettings());
     syncLog('Syncing settings to server...');
-    const res = await fetch('/api/settings', {
+    const res = await apiFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: syncUsername, serverUrl: syncServerUrl, settings }),

@@ -37,6 +37,26 @@ export function sanitizeEmailHtml(html: string): string {
 }
 
 /**
+ * Sanitize config for emails rendered inside a sandboxed iframe.
+ * Allows <style> tags because CSS is scoped to the iframe document and
+ * cannot leak into the host app. Scripts are still blocked by the sandbox
+ * attribute (no allow-scripts). Use ONLY for iframe-rendered content –
+ * never for content rendered into the main DOM.
+ */
+export const EMAIL_IFRAME_SANITIZE_CONFIG = {
+  ...EMAIL_SANITIZE_CONFIG,
+  FORBID_TAGS: EMAIL_SANITIZE_CONFIG.FORBID_TAGS.filter((t) => t !== 'style'),
+};
+
+/**
+ * Sanitize email HTML for rendering inside a sandboxed iframe.
+ * Preserves <style> tags so the email's own CSS is applied.
+ */
+export function sanitizeEmailHtmlForIframe(html: string): string {
+  return DOMPurify.sanitize(html, EMAIL_IFRAME_SANITIZE_CONFIG);
+}
+
+/**
  * Sanitize HTML signature with stricter rules
  * Only allows basic formatting, no external resources
  */
@@ -80,6 +100,40 @@ export function hasRichFormatting(html: string): boolean {
   );
 }
 
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+function escapeHtml(str: string): string {
+  return str.replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
+/**
+ * Render a plain-text email body as HTML, HTML-escaping all content and
+ * linkifying http(s) URLs. URLs terminate at whitespace or any character that
+ * would break an attribute (`"`, `'`, `<`, `>`), so attribute-escaping is
+ * enforced even if escaping has bugs.
+ */
+export function plainTextToSafeHtml(text: string, linkClass = ''): string {
+  const urlRegex = /(https?:\/\/[^\s<>"']+)/g;
+  const classAttr = linkClass ? ` class="${escapeHtml(linkClass)}"` : '';
+  let result = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = urlRegex.exec(text)) !== null) {
+    result += escapeHtml(text.slice(lastIndex, match.index));
+    const url = escapeHtml(match[0]);
+    result += `<a href="${url}" target="_blank" rel="noopener noreferrer"${classAttr}>${url}</a>`;
+    lastIndex = match.index + match[0].length;
+  }
+  result += escapeHtml(text.slice(lastIndex));
+  return result;
+}
+
 /**
  * Collapse empty containers left behind when external images are blocked.
  * Walks up from each blocked img to find the nearest table cell or wrapper div
@@ -97,6 +151,7 @@ export function collapseBlockedImageContainers(html: string): string {
         const hasVisibleMedia = el.querySelector('img:not([data-blocked-src]), video, canvas');
         const hasLinks = el.querySelector('a[href]');
         if (!hasVisibleText && !hasVisibleMedia && !hasLinks) {
+          el.setAttribute('data-blocked-collapsed-style', el.style.cssText);
           el.style.display = 'none';
           el.style.height = '0';
           el.style.padding = '0';

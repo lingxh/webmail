@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Save, Loader2, RotateCcw, ImageIcon, Upload, Trash2 } from 'lucide-react';
+import { apiFetch } from '@/lib/browser-navigation';
 
 interface ConfigEntry {
   value: unknown;
@@ -38,7 +39,7 @@ export default function AdminBrandingPage() {
 
   async function fetchConfig() {
     setLoading(true);
-    const res = await fetch('/api/admin/config');
+    const res = await apiFetch('/api/admin/config');
     if (res.ok) setConfig(await res.json());
     setLoading(false);
   }
@@ -58,7 +59,7 @@ export default function AdminBrandingPage() {
     setSaving(true);
     setMessage(null);
 
-    const res = await fetch('/api/admin/config', {
+    const res = await apiFetch('/api/admin/config', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(edits),
@@ -83,7 +84,7 @@ export default function AdminBrandingPage() {
     formData.append('file', file);
     formData.append('slot', slot);
 
-    const res = await fetch('/api/admin/branding', {
+    const res = await apiFetch('/api/admin/branding', {
       method: 'POST',
       body: formData,
     });
@@ -112,7 +113,7 @@ export default function AdminBrandingPage() {
   async function handleDeleteUpload(slot: string) {
     setMessage(null);
 
-    const res = await fetch('/api/admin/branding', {
+    const res = await apiFetch('/api/admin/branding', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ slot }),
@@ -133,7 +134,7 @@ export default function AdminBrandingPage() {
   }
 
   async function handleRevert(key: string) {
-    const res = await fetch('/api/admin/config', {
+    const res = await apiFetch('/api/admin/config', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key }),
@@ -161,8 +162,8 @@ export default function AdminBrandingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold text-foreground">Branding</h1>
           <p className="text-sm text-muted-foreground mt-1">Customize logos, favicon, and company information</p>
         </div>
@@ -192,22 +193,22 @@ export default function AdminBrandingPage() {
         <div className="divide-y divide-border">
           {IMAGE_FIELDS.map(field => (
             <div key={field.key} className="px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
                 <div className="flex items-center gap-2 min-w-0">
-                  <label className="text-sm text-foreground whitespace-nowrap">{field.label}</label>
+                  <label className="text-sm text-foreground">{field.label}</label>
                   {config[field.key]?.source === 'admin' && (
                     <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary">
                       {isUploadedFile(field.key) ? 'uploaded' : 'admin'}
                     </span>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
                   <input
                     type="text"
                     value={currentValue(field.key)}
                     onChange={(e) => handleChange(field.key, e.target.value)}
                     placeholder="Enter URL or upload a file"
-                    className="h-8 w-64 rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className="h-8 w-full sm:w-64 min-w-0 rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   />
                   <input
                     ref={el => { fileInputRefs.current[field.key] = el; }}
@@ -269,20 +270,20 @@ export default function AdminBrandingPage() {
         </div>
         <div className="divide-y divide-border">
           {TEXT_FIELDS.map(field => (
-            <div key={field.key} className="px-4 py-3 flex items-center justify-between gap-4">
+            <div key={field.key} className="px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="flex items-center gap-2 min-w-0">
-                <label className="text-sm text-foreground whitespace-nowrap">{field.label}</label>
+                <label className="text-sm text-foreground">{field.label}</label>
                 {config[field.key]?.source === 'admin' && (
                   <span className="text-[10px] font-medium uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary">admin</span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto">
                 <input
                   type="text"
                   value={currentValue(field.key)}
                   onChange={(e) => handleChange(field.key, e.target.value)}
                   placeholder={field.key.includes('Url') ? 'https://...' : 'Enter value'}
-                  className="h-8 w-72 rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-8 w-full sm:w-72 min-w-0 rounded-md border border-input bg-background px-2.5 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
                 {config[field.key]?.source === 'admin' && (
                   <button onClick={() => handleRevert(field.key)} className="text-muted-foreground hover:text-foreground" title="Revert to default">

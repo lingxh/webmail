@@ -1,9 +1,9 @@
 <div align="center">
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="public/branding/Bulwark%20Logo%20with%20Lettering%20White%20and%20Color.svg" />
-  <source media="(prefers-color-scheme: light)" srcset="public/branding/Bulwark%20Logo%20with%20Lettering%20Dark%20Color.svg" />
-  <img src="public/branding/Bulwark%20Logo%20with%20Lettering%20Dark%20Color.svg" alt="Bulwark Webmail" width="220" />
+  <source media="(prefers-color-scheme: dark)" srcset="public/branding/Bulwark_Logo_with_Lettering_White_and_Color.svg" />
+  <source media="(prefers-color-scheme: light)" srcset="public/branding/Bulwark_Logo_with_Lettering_Dark_Color.svg" />
+  <img src="public/branding/Bulwark_Logo_with_Lettering_Dark_Color.svg" alt="Bulwark Webmail" width="280" />
 </picture>
 
 </div>
@@ -11,6 +11,17 @@
 # Contributing to Bulwark Webmail
 
 Thank you for your interest in contributing to Bulwark Webmail! This document provides guidelines and information for contributors.
+
+## Join our Community
+**New to the project or looking for a place to start?** You don't need to be an expert to contribute! Whether you need help setting up your environment, want to report a bug, or are interested in helping with translations, our Discord is the best place to connect.
+
+* **Get Support:** Get real-time help with development hurdles.
+* **Contribute:** Share ideas, suggest features, or help us improve documentation.
+* **Collaborate:** Meet the team and other contributors working to make Bulwark better.
+
+[**Join the Bulwark Discord Server**](https://discord.gg/tYCujymGrT)
+
+---
 
 ## Getting Started
 

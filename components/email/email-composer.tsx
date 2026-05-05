@@ -6,12 +6,15 @@ import { useTranslations } from "next-intl";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { X, Paperclip, Send, Save, Check, Loader2, AlertCircle, FileText, BookmarkPlus, ShieldCheck, Lock } from "lucide-react";
-import { cn, formatFileSize, formatDateTime } from "@/lib/utils";
+import { cn, formatFileSize, formatDateTime, generateUUID } from "@/lib/utils";
 import { debug } from "@/lib/debug";
 import { toast } from "@/stores/toast-store";
 import { sanitizeEmailHtml } from "@/lib/email-sanitization";
+import { emailHooks, contactHooks } from "@/lib/plugin-hooks";
+import type { OutgoingEmail, RecipientSuggestion } from "@/lib/plugin-types";
 import { useAuthStore } from "@/stores/auth-store";
 import { useIdentityStore } from "@/stores/identity-store";
+import { useAccountStore } from "@/stores/account-store";
 import { useSmimeStore } from "@/stores/smime-store";
 import { useEmailStore } from "@/stores/email-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -30,6 +33,7 @@ import { TemplateForm } from "@/components/templates/template-form";
 import type { EmailTemplate } from "@/lib/template-types";
 import { appendPlainTextSignature, getPlainTextSignature } from "@/lib/signature-utils";
 import { findReplyIdentityId } from "@/lib/reply-identity";
+import { computeReplyThreadingHeaders } from "@/lib/email-threading";
 import { RichTextEditor } from "@/components/email/rich-text-editor";
 
 /** Strip HTML tags and decode entities to get a plain-text version */
@@ -65,7 +69,9 @@ interface EmailComposerProps {
     fromEmail?: string;
     fromName?: string;
     identityId?: string;
-    attachments?: Array<{ blobId: string; name: string; type: string; size: number }>;
+    attachments?: Array<{ blobId: string; name: string; type: string; size: number; disposition?: 'attachment' | 'inline'; cid?: string }>;
+    inReplyTo?: string[];
+    references?: string[];
   }) => void | Promise<void>;
   onClose?: () => void;
   onDiscardDraft?: (draftId: string) => void;
@@ -84,8 +90,26 @@ interface EmailComposerProps {
     body?: string;
     htmlBody?: string;
     receivedAt?: string;
+    accountId?: string;
+    attachments?: Array<{ blobId: string; name?: string; type: string; size: number; cid?: string; disposition?: string }>;
+    // Threading: parent's Message-ID and References, used to set RFC 5322
+    // In-Reply-To and References on outgoing replies. See #234.
+    messageId?: string;
+    inReplyTo?: string[];
+    references?: string[];
   };
 }
+
+type ComposerAttachment = {
+  file?: File;
+  name: string;
+  type: string;
+  size: number;
+  blobId?: string;
+  uploading?: boolean;
+  error?: boolean;
+  abortController?: AbortController;
+};
 
 export function EmailComposer({
   onSend,
@@ -102,7 +126,10 @@ export function EmailComposer({
   const tCommon = useTranslations('common');
   const timeFormat = useSettingsStore((state) => state.timeFormat);
   const plainTextMode = useSettingsStore((state) => state.plainTextMode);
+  const subAddressDelimiter = useSettingsStore((state) => state.subAddressDelimiter);
   const autoSelectReplyIdentity = useSettingsStore((state) => state.autoSelectReplyIdentity);
+  const attachmentReminderEnabled = useSettingsStore((state) => state.attachmentReminderEnabled);
+  const attachmentReminderKeywords = useSettingsStore((state) => state.attachmentReminderKeywords);
 
   // Initialize with reply/forward data if provided
   const getInitialTo = () => {
@@ -197,7 +224,22 @@ export function EmailComposer({
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedDataRef = useRef<string>("");
-  const [attachments, setAttachments] = useState<Array<{ file: File; blobId?: string; uploading?: boolean; error?: boolean; abortController?: AbortController }>>([]);
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>(() => {
+    if (mode === 'forward' && replyTo?.attachments?.length) {
+      return replyTo.attachments
+        // Skip inline cid-referenced images - they're embedded in the forwarded HTML body
+        // (matches the viewer's hideInlineImageAttachments logic).
+        .filter(att => !(att.cid && att.disposition === 'inline' && (att.type || '').startsWith('image/')))
+        .map(att => ({
+          name: att.name || 'attachment',
+          type: att.type || 'application/octet-stream',
+          size: att.size,
+          blobId: att.blobId,
+        }));
+    }
+    return [];
+  });
+  const inlineImagesRef = useRef<Array<{ cid: string; blobId: string; type: string; name: string; size: number; dataUrl: string }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [validationErrors, setValidationErrors] = useState<{ to?: boolean; subject?: boolean; body?: boolean }>({});
   const [shakeField, setShakeField] = useState<string | null>(null);
@@ -212,6 +254,8 @@ export function EmailComposer({
   const [smimePassphrasePrompt, setSmimePassphrasePrompt] = useState<{ keyId: string; resolve: (passphrase: string) => void; reject: () => void } | null>(null);
   const [smimePassphraseInput, setSmimePassphraseInput] = useState('');
   const [smimePassphraseError, setSmimePassphraseError] = useState('');
+  const [showAttachmentWarning, setShowAttachmentWarning] = useState(false);
+  const [attachmentWarningKeyword, setAttachmentWarningKeyword] = useState('');
 
   const saveTemplateModalRef = useFocusTrap({
     isActive: showSaveAsTemplate,
@@ -222,6 +266,12 @@ export function EmailComposer({
   const closeDialogRef = useFocusTrap({
     isActive: showCloseDialog,
     onEscape: () => setShowCloseDialog(false),
+    restoreFocus: true,
+  });
+
+  const attachmentWarningRef = useFocusTrap({
+    isActive: showAttachmentWarning,
+    onEscape: () => setShowAttachmentWarning(false),
     restoreFocus: true,
   });
 
@@ -244,12 +294,28 @@ export function EmailComposer({
 
     if (matchedIdentityId) {
       setSelectedIdentityId(matchedIdentityId);
+      return;
+    }
+
+    // Fallback: match identity by the account's email when replying from unified view
+    if (replyTo?.accountId) {
+      const account = useAccountStore.getState().getAccountById(replyTo.accountId);
+      if (account?.email) {
+        const accountEmail = account.email.trim().toLowerCase();
+        const accountIdentity = identities.find(
+          (identity) => identity.email.trim().toLowerCase() === accountEmail
+        );
+        if (accountIdentity) {
+          setSelectedIdentityId(accountIdentity.id);
+        }
+      }
     }
   }, [
     autoSelectReplyIdentity,
     identities,
     initialData?.selectedIdentityId,
     mode,
+    replyTo?.accountId,
     replyTo?.bcc,
     replyTo?.cc,
     replyTo?.to,
@@ -262,6 +328,9 @@ export function EmailComposer({
       ? `<div>${getPlainTextSignature(currentIdentity).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</div>`
       : '';
   const getAutocomplete = useContactStore((s) => s.getAutocomplete);
+  const addToTrustedSendersBook = useContactStore((s) => s.addToTrustedSendersBook);
+  const addTrustedSender = useSettingsStore((s) => s.addTrustedSender);
+  const trustedSendersAddressBook = useSettingsStore((s) => s.trustedSendersAddressBook);
   const addTemplate = useTemplateStore((s) => s.addTemplate);
   const sendRawEmail = useEmailStore((s) => s.sendRawEmail);
   const smimeStore = useSmimeStore();
@@ -296,7 +365,7 @@ export function EmailComposer({
   stateRef.current = { to, cc, bcc, subject, body, showCc, showBcc, selectedIdentityId, subAddressTag, draftId };
 
   // Track initial values for dirty detection (captured once on first render)
-  const initialValuesRef = useRef({ to, cc, bcc, subject, body, attachmentCount: 0 });
+  const initialValuesRef = useRef({ to, cc, bcc, subject, body, attachmentCount: attachments.length });
   const isDirtyRef = useRef(false);
   isDirtyRef.current = to !== initialValuesRef.current.to || cc !== initialValuesRef.current.cc ||
     bcc !== initialValuesRef.current.bcc || subject !== initialValuesRef.current.subject ||
@@ -382,10 +451,13 @@ export function EmailComposer({
       return;
     }
 
-    autocompleteTimeoutRef.current = setTimeout(() => {
-      const results = getAutocomplete(lastPart);
-      setAutocompleteResults(results);
-      setActiveAutoField(results.length > 0 ? field : null);
+    autocompleteTimeoutRef.current = setTimeout(async () => {
+      const localResults = getAutocomplete(lastPart);
+      // Let plugins contribute extra suggestions (Slack handles, GitHub, CRM, …).
+      const initial: RecipientSuggestion[] = localResults.map(r => ({ name: r.name, email: r.email }));
+      const merged = await contactHooks.onProvideRecipientSuggestions.transform(initial, { query: lastPart });
+      setAutocompleteResults(merged.map(s => ({ name: s.name, email: s.email })));
+      setActiveAutoField(merged.length > 0 ? field : null);
       setAutoSelectedIndex(-1);
     }, 200);
   }, [getAutocomplete]);
@@ -495,9 +567,29 @@ export function EmailComposer({
   const addFiles = useCallback(async (files: File[]) => {
     if (!client || files.length === 0) return;
 
-    const newAttachments = files.map(file => {
+    // Let plugins veto each upload before it's queued.
+    const allowedFiles: File[] = [];
+    for (const file of files) {
+      const ok = await emailHooks.onBeforeAttachmentUpload.intercept({
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+      });
+      if (ok) allowedFiles.push(file);
+    }
+    if (allowedFiles.length === 0) return;
+    files = allowedFiles;
+
+    const newAttachments: ComposerAttachment[] = files.map(file => {
       const controller = new AbortController();
-      return { file, uploading: true, abortController: controller };
+      return {
+        file,
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        uploading: true,
+        abortController: controller,
+      };
     });
     setAttachments(prev => [...prev, ...newAttachments]);
 
@@ -516,6 +608,12 @@ export function EmailComposer({
               : att
           )
         );
+        emailHooks.onAfterAttachmentUpload.emit({
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          size: file.size,
+          blobId,
+        });
       } catch (error) {
         if (controller?.signal.aborted) continue;
         debug.error(`Failed to upload ${file.name}:`, error);
@@ -532,11 +630,32 @@ export function EmailComposer({
     }
   }, [client, t]);
 
-  const handleImageUpload = useCallback(async (file: File): Promise<string | null> => {
+  const handleImageUpload = useCallback(async (
+    file: File,
+  ): Promise<{ src: string; cid: string } | null> => {
     if (!client) return null;
     try {
-      const { blobId } = await client.uploadBlob(file);
-      return await client.fetchBlobAsObjectUrl(blobId, file.name, file.type);
+      const readAsDataUrl = new Promise<string | null>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve((e.target?.result as string) ?? null);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(file);
+      });
+      const [{ blobId }, dataUrl] = await Promise.all([
+        client.uploadBlob(file),
+        readAsDataUrl,
+      ]);
+      if (!dataUrl) throw new Error('Failed to read image as data URL');
+      const cid = `${generateUUID()}@webmail`;
+      inlineImagesRef.current.push({
+        cid,
+        blobId,
+        type: file.type || 'application/octet-stream',
+        name: file.name,
+        size: file.size,
+        dataUrl,
+      });
+      return { src: dataUrl, cid };
     } catch (error) {
       debug.error(`Failed to upload inline image ${file.name}:`, error);
       toast.error(t('upload_failed', { filename: file.name }));
@@ -619,9 +738,9 @@ export function EmailComposer({
       .filter(att => att.blobId && !att.uploading)
       .map(att => ({
         blobId: att.blobId!,
-        name: att.file.name,
-        type: att.file.type,
-        size: att.file.size,
+        name: att.name,
+        type: att.type,
+        size: att.size,
       }));
 
     // Create a hash of current data to compare with last saved
@@ -638,7 +757,7 @@ export function EmailComposer({
     // Generate sub-addressed email if tag is set
     const fromEmail = currentIdentity?.email
       ? subAddressTag
-        ? generateSubAddress(currentIdentity.email, subAddressTag)
+        ? generateSubAddress(currentIdentity.email, subAddressTag, subAddressDelimiter)
         : currentIdentity.email
       : undefined;
 
@@ -653,7 +772,8 @@ export function EmailComposer({
         fromEmail,
         draftId || undefined,
         uploadedAttachments,
-        currentIdentity?.name || undefined
+        currentIdentity?.name || undefined,
+        plainTextMode ? undefined : body
       );
 
       setDraftId(savedDraftId);
@@ -689,6 +809,19 @@ export function EmailComposer({
 
     // Set new timeout for auto-save (2 seconds after last change)
     saveTimeoutRef.current = setTimeout(() => {
+      // Plugin observers (AI assist, grammar, …) get a debounced snapshot here.
+      emailHooks.onDraftChange.emit({
+        to: to.split(',').map(s => s.trim()).filter(Boolean),
+        cc: cc.split(',').map(s => s.trim()).filter(Boolean),
+        bcc: bcc.split(',').map(s => s.trim()).filter(Boolean),
+        subject,
+        htmlBody: plainTextMode ? '' : body,
+        textBody: plainTextMode ? body : htmlToPlainText(body),
+        identityId: selectedIdentityId || '',
+        attachments: attachments
+          .filter(a => a.blobId && !a.uploading && !a.error)
+          .map(a => ({ name: a.name, type: a.type || 'application/octet-stream', size: a.size })),
+      });
       saveDraft();
     }, 2000);
 
@@ -722,7 +855,50 @@ export function EmailComposer({
     return undefined;
   };
 
-  const handleSend = async () => {
+  // Rewrite data: URLs of dropped images (tagged with data-cid) into cid:
+  // references so recipient clients that strip data URIs can still render them.
+  const rewriteInlineImages = (html: string): {
+    html: string;
+    attachments: Array<{ blobId: string; name: string; type: string; size: number; disposition: 'inline'; cid: string }>;
+  } => {
+    const known = inlineImagesRef.current;
+    const doc = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
+    const used = new Map<string, typeof known[number]>();
+
+    if (known.length > 0) {
+      doc.querySelectorAll('img[data-cid]').forEach((img) => {
+        const cid = img.getAttribute('data-cid');
+        if (!cid) return;
+        const entry = known.find((e) => e.cid === cid);
+        if (!entry) return;
+        img.setAttribute('src', `cid:${cid}`);
+        img.removeAttribute('data-cid');
+        used.set(cid, entry);
+      });
+    }
+
+    // Recipient mail clients apply default <p> margins inside table cells,
+    // inflating row height. Tiptap wraps cell text in <p>, so force margin:0
+    // to match the composer's tight rows.
+    doc.querySelectorAll('td > p, th > p').forEach((p) => {
+      const existing = p.getAttribute('style') || '';
+      p.setAttribute('style', `margin:0;${existing}`);
+    });
+
+    return {
+      html: doc.body.innerHTML,
+      attachments: Array.from(used.values()).map((e) => ({
+        blobId: e.blobId,
+        name: e.name,
+        type: e.type,
+        size: e.size,
+        disposition: 'inline' as const,
+        cid: e.cid,
+      })),
+    };
+  };
+
+  const handleSend = async (skipAttachmentCheck = false) => {
     const ccAddresses = cc.split(",").map(e => e.trim()).filter(Boolean);
     const bccAddresses = bcc.split(",").map(e => e.trim()).filter(Boolean);
 
@@ -741,6 +917,21 @@ export function EmailComposer({
       return;
     }
 
+    // Attachment reminder check
+    if (!skipAttachmentCheck && attachmentReminderEnabled) {
+      const hasAttachments = attachments.some(att => att.blobId && !att.uploading && !att.error);
+      if (!hasAttachments) {
+        const bodyText = htmlToPlainText(body);
+        const searchText = `${subject} ${bodyText}`.toLowerCase();
+        const matched = attachmentReminderKeywords.find(kw => searchText.includes(kw.toLowerCase()));
+        if (matched) {
+          setAttachmentWarningKeyword(matched);
+          setShowAttachmentWarning(true);
+          return;
+        }
+      }
+    }
+
     let finalDraftId = draftId;
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -756,7 +947,7 @@ export function EmailComposer({
 
     const fromEmail = currentIdentity?.email
       ? subAddressTag
-        ? generateSubAddress(currentIdentity.email, subAddressTag)
+        ? generateSubAddress(currentIdentity.email, subAddressTag, subAddressDelimiter)
         : currentIdentity.email
       : undefined;
 
@@ -772,14 +963,21 @@ export function EmailComposer({
       return '';
     };
 
+    // RFC 5322 §3.6.4 threading — only continues the chain on a reply, not a forward.
+    const threadingHeaders = (mode === 'reply' || mode === 'replyAll')
+      ? computeReplyThreadingHeaders(replyTo)
+      : null;
+
     // In plain text mode, send text/plain only (no HTML body)
     const finalBody = plainTextMode
       ? appendPlainTextSignature(body, currentIdentity)
       : appendPlainTextSignature(htmlToPlainText(body), currentIdentity);
 
+    const rewritten = plainTextMode ? null : rewriteInlineImages(body);
     const finalHtmlBody = plainTextMode
       ? undefined
-      : `<div>${body}</div>${buildSignatureHtml()}`;
+      : `<div>${rewritten!.html}</div>${buildSignatureHtml()}`;
+    const inlineAttachments = rewritten?.attachments ?? [];
 
     try {
       // S/MIME send pipeline: build raw MIME → sign → encrypt → sendRawEmail
@@ -808,27 +1006,47 @@ export function EmailComposer({
         for (const att of attachments) {
           if (att.error || att.uploading) continue;
           let content: ArrayBuffer;
-          if (att.file.size > 0) {
+          if (att.file && att.file.size > 0) {
             content = await att.file.arrayBuffer();
           } else if (att.blobId && client) {
-            content = await client.fetchBlobArrayBuffer(att.blobId, att.file.name, att.file.type);
+            content = await client.fetchBlobArrayBuffer(att.blobId, att.name, att.type);
           } else {
             continue;
           }
           mimeAttachments.push({
-            filename: att.file.name,
-            contentType: att.file.type || 'application/octet-stream',
+            filename: att.name,
+            contentType: att.type || 'application/octet-stream',
             content,
+          });
+        }
+        for (const inline of inlineAttachments) {
+          if (!client) break;
+          const content = await client.fetchBlobArrayBuffer(inline.blobId, inline.name, inline.type);
+          mimeAttachments.push({
+            filename: inline.name,
+            contentType: inline.type,
+            content,
+            cid: inline.cid,
           });
         }
 
         // 4. Build canonical MIME
+        // mime-builder takes inReplyTo as a single ref-form msg-id (with brackets);
+        // references stays an array. threadingHeaders contains bare msg-ids.
+        const mimeInReplyTo = threadingHeaders?.inReplyTo[0]
+          ? `<${threadingHeaders.inReplyTo[0]}>`
+          : undefined;
+        const mimeReferences = threadingHeaders?.references.length
+          ? threadingHeaders.references.map(id => `<${id}>`)
+          : undefined;
         const mimeBytes = buildMimeMessage({
           from: { name: currentIdentity.name || undefined, email: fromEmail || currentIdentity.email },
           to: toAddresses.map(e => ({ email: e })),
           cc: ccAddresses.length > 0 ? ccAddresses.map(e => ({ email: e })) : undefined,
           bcc: bccAddresses.length > 0 ? bccAddresses.map(e => ({ email: e })) : undefined,
           subject,
+          inReplyTo: mimeInReplyTo,
+          references: mimeReferences,
           textBody: finalBody,
           htmlBody: finalHtmlBody,
           attachments: mimeAttachments.length > 0 ? mimeAttachments : undefined,
@@ -841,6 +1059,8 @@ export function EmailComposer({
           to: toAddresses.map(e => ({ email: e })),
           cc: ccAddresses.length > 0 ? ccAddresses.map(e => ({ email: e })) : undefined,
           subject,
+          inReplyTo: mimeInReplyTo,
+          references: mimeReferences,
         };
 
         // 5. Sign if enabled
@@ -880,23 +1100,53 @@ export function EmailComposer({
       } else {
         // Standard JMAP send path
         // Collect uploaded attachment blobIds for the send request
-        const uploadedAttachments = attachments
+        const uploadedAttachments: Array<{ blobId: string; name: string; type: string; size: number; disposition?: 'attachment' | 'inline'; cid?: string }> = attachments
           .filter(att => att.blobId && !att.uploading && !att.error)
-          .map(att => ({ blobId: att.blobId!, name: att.file.name, type: att.file.type || 'application/octet-stream', size: att.file.size }));
+          .map(att => ({ blobId: att.blobId!, name: att.name, type: att.type || 'application/octet-stream', size: att.size }));
+        uploadedAttachments.push(...inlineAttachments);
 
-        await onSend?.({
+        // Let plugins (signatures, link-rewriting, encryption, AI rewrite, …)
+        // transform the outgoing message immediately before submission.
+        const transformInput: OutgoingEmail = {
           to: toAddresses,
           cc: ccAddresses,
           bcc: bccAddresses,
           subject,
-          body: finalBody,
-          htmlBody: finalHtmlBody,
+          htmlBody: finalHtmlBody || '',
+          textBody: finalBody,
+          identityId: currentIdentity?.id || '',
+          attachments: uploadedAttachments.map(a => ({ name: a.name, type: a.type, size: a.size })),
+          inReplyTo: threadingHeaders?.inReplyTo?.[0],
+        };
+        const outgoing = await emailHooks.onTransformOutgoingEmail.transform(transformInput);
+
+        await onSend?.({
+          to: outgoing.to,
+          cc: outgoing.cc,
+          bcc: outgoing.bcc,
+          subject: outgoing.subject,
+          body: outgoing.textBody,
+          htmlBody: outgoing.htmlBody || undefined,
           draftId: finalDraftId || undefined,
           fromEmail,
           fromName: currentIdentity?.name || undefined,
-          identityId: currentIdentity?.id,
+          identityId: outgoing.identityId || currentIdentity?.id,
           attachments: uploadedAttachments.length > 0 ? uploadedAttachments : undefined,
+          inReplyTo: threadingHeaders?.inReplyTo,
+          references: threadingHeaders?.references,
         });
+
+        if (mode === 'reply' || mode === 'replyAll') {
+          for (const recipient of [...outgoing.to, ...outgoing.cc].filter(Boolean)) {
+            if (trustedSendersAddressBook && client) {
+              addToTrustedSendersBook(client, recipient).catch(err => {
+                debug.error('Failed to add trusted sender to address book:', err);
+              });
+            } else {
+              addTrustedSender(recipient);
+            }
+          }
+        }
       }
 
       setTo("");
@@ -954,8 +1204,14 @@ export function EmailComposer({
   };
 
   return (
+    <div className={cn("flex h-full bg-background", className)}>
+      <PluginSlot
+        name="composer-sidebar"
+        className="hidden md:flex shrink-0 h-full overflow-hidden border-r border-border"
+      />
+      {/* Right-side composer sidebar slot is rendered after the main content div below. */}
     <div
-      className={cn("flex flex-col h-full bg-background relative", className)}
+      className="flex flex-col h-full bg-background relative flex-1 min-w-0"
       data-tour="composer"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
@@ -1001,7 +1257,7 @@ export function EmailComposer({
         </div>
         {/* Mobile: send button in header */}
         <Button
-          onClick={handleSend}
+          onClick={() => handleSend()}
           disabled={!canSend}
           title={getSendTooltip()}
           size="sm"
@@ -1027,7 +1283,7 @@ export function EmailComposer({
                 >
                   {identities.map((identity) => {
                     const displayEmail = subAddressTag
-                      ? generateSubAddress(identity.email, subAddressTag)
+                      ? generateSubAddress(identity.email, subAddressTag, subAddressDelimiter)
                       : identity.email;
                     return (
                       <option key={identity.id} value={identity.id}>
@@ -1040,7 +1296,7 @@ export function EmailComposer({
                 <span className="text-sm text-foreground flex-1 truncate">
                   {subAddressTag ? (
                     <span className="font-mono">
-                      {generateSubAddress(primaryIdentity?.email || '', subAddressTag)}
+                      {generateSubAddress(primaryIdentity?.email || '', subAddressTag, subAddressDelimiter)}
                     </span>
                   ) : (
                     <>
@@ -1262,9 +1518,9 @@ export function EmailComposer({
                     ) : (
                       <Paperclip className="w-3 h-3 flex-shrink-0" />
                     )}
-                    <span className="max-w-[150px] md:max-w-[200px] truncate">{att.file.name}</span>
+                    <span className="max-w-[150px] md:max-w-[200px] truncate">{att.name}</span>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      ({formatFileSize(att.file.size)})
+                      ({formatFileSize(att.size)})
                     </span>
                     <button
                       onClick={() => removeAttachment(index)}
@@ -1366,7 +1622,7 @@ export function EmailComposer({
               {t('discard')}
             </button>
             <Button
-              onClick={handleSend}
+              onClick={() => handleSend()}
               disabled={!canSend}
               title={getSendTooltip()}
               className="hidden md:inline-flex"
@@ -1466,6 +1722,36 @@ export function EmailComposer({
         </div>
       )}
 
+      {showAttachmentWarning && (
+        <div
+          className="fixed inset-0 bg-black/50 backdrop-blur-[1px] flex items-center justify-center z-[60] p-4 animate-in fade-in duration-150"
+          onClick={() => setShowAttachmentWarning(false)}
+        >
+          <div
+            ref={attachmentWarningRef}
+            role="alertdialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-background border border-border rounded-lg shadow-xl w-full max-w-md animate-in zoom-in-95 duration-200"
+          >
+            <div className="p-6">
+              <h2 className="text-lg font-semibold text-foreground">{t('forgot_attachment.title')}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {t('forgot_attachment.message', { keyword: attachmentWarningKeyword })}
+              </p>
+            </div>
+            <div className="flex items-center justify-end gap-3 px-6 pb-6">
+              <Button variant="outline" onClick={() => setShowAttachmentWarning(false)}>
+                {t('forgot_attachment.back')}
+              </Button>
+              <Button onClick={() => { setShowAttachmentWarning(false); handleSend(true); }}>
+                {t('forgot_attachment.send_anyway')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showCloseDialog && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-[1px] flex items-center justify-center z-[60] p-4 animate-in fade-in duration-150"
@@ -1497,6 +1783,11 @@ export function EmailComposer({
           </div>
         </div>
       )}
+    </div>
+      <PluginSlot
+        name="composer-sidebar-right"
+        className="hidden md:flex shrink-0 h-full overflow-hidden border-l border-border"
+      />
     </div>
   );
 }

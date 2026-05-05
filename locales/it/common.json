@@ -45,11 +45,11 @@
     "imprint": "Note legali",
     "privacy_policy": "Informativa sulla privacy",
     "try_demo": "Prova la demo",
-    "demo_description": "Esplora con dati di esempio — nessun account necessario",
+    "demo_description": "Esplora con dati di esempio - nessun account necessario",
     "demo_launching": "Avvio demo...",
     "demo_login_button": "Avvia demo",
     "demo_tagline": "Scopri un client di posta completo. Nessun account richiesto.",
-    "demo_no_signup": "Nessuna registrazione — esplora liberamente con dati di esempio",
+    "demo_no_signup": "Nessuna registrazione - esplora liberamente con dati di esempio",
     "oauth_completing": "Completamento dell'accesso...",
     "oauth_error": {
       "title": "Autenticazione non riuscita",
@@ -84,7 +84,7 @@
     "loading_mailboxes": "Caricamento caselle di posta...",
     "push_connected": "Aggiornamenti in tempo reale attivi",
     "push_disconnected": "Aggiornamenti in tempo reale non attivi",
-    "keyboard_shortcuts": "Keyboard Shortcuts",
+    "keyboard_shortcuts": "Scorciatoie da tastiera",
     "theme": {
       "light": "Tema chiaro",
       "dark": "Tema scuro",
@@ -104,6 +104,13 @@
       "spam": "Spam",
       "important": "Importanti"
     },
+    "unified_inbox": "Posta in arrivo unificata",
+    "unified_sent": "Tutti gli inviati",
+    "unified_drafts": "Tutte le bozze",
+    "unified_trash": "Tutti i cestini",
+    "unified_archive": "Tutti gli archivi",
+    "unified_junk": "Tutto lo spam",
+    "all_accounts": "Tutti gli account",
     "expand": "Espandi",
     "collapse": "Comprimi",
     "expand_tooltip": "Espandi",
@@ -122,7 +129,8 @@
     "folders": "Cartelle",
     "mail": "Posta",
     "nav_label": "Navigazione",
-    "add_app": "App"
+    "add_app": "App",
+    "shared": "Condiviso"
   },
   "sidebar_apps": {
     "modal_title": "App della barra laterale",
@@ -176,6 +184,7 @@
     "batch_actions": {
       "select": "Seleziona e-mail",
       "select_all": "Seleziona tutto",
+      "selected_messages": "{count} email {count, plural, one {selezionata} other {selezionate}}",
       "mark_read": "Segna come letto",
       "mark_unread": "Segna come non letto",
       "delete": "Elimina",
@@ -215,6 +224,11 @@
     "unstar": "Rimuovi stella",
     "mark_unread": "Segna come non letto",
     "mark_read": "Segna come letto",
+    "unread": "Non letto",
+    "read": "Letto",
+    "spam_short": "Spam",
+    "not_spam_short": "Non spam",
+    "move": "Sposta",
     "print": "Stampa",
     "view_source": "Visualizza sorgente",
     "export_email": "Esporta come .eml",
@@ -296,7 +310,20 @@
         "fail": "DMARC fallito",
         "none": "Nessun DMARC"
       },
-      "spam_score": "Punteggio spam"
+      "spam_score": "Punteggio spam",
+      "tooltip_spf": "Sender Policy Framework: verifica che il server mittente sia autorizzato a inviare e-mail per conto del dominio",
+      "tooltip_dkim": "DomainKeys Identified Mail: conferma tramite firma crittografica che l'e-mail non è stata alterata durante il transito",
+      "tooltip_dmarc": "Domain-based Message Authentication, Reporting & Conformance: assicura che SPF e DKIM siano allineati al dominio del mittente e definisce una politica in caso di errore",
+      "policy": "Criterio",
+      "result": {
+        "pass": "Superato",
+        "fail": "Fallito",
+        "softfail": "Fallimento lieve",
+        "neutral": "Neutro",
+        "permerror": "Errore permanente",
+        "temperror": "Errore temporaneo",
+        "none": "Nessuno"
+      }
     },
     "headers": {
       "routing": "Instradamento",
@@ -416,12 +443,39 @@
       "cancel_info": "L'organizzatore ha annullato questo evento.",
       "event_updated": "Aggiornamento #{sequence}",
       "event_status_tentative": "Provvisorio",
-      "event_status_cancelled": "Annullato"
+      "event_status_cancelled": "Annullato",
+      "collapse": "Nascondi dettagli",
+      "expand": "Mostra dettagli"
     },
     "previous": "Precedente",
     "next": "Successivo",
     "send": "Invia",
-    "more": "altri"
+    "more": "altri",
+    "details": {
+      "recipients_routing": "Destinatari e instradamento",
+      "authentication_security": "Autenticazione e sicurezza",
+      "identifiers_threading": "Identificatori e conversazione",
+      "mailing_list": "Mailing list",
+      "message_properties": "Proprietà del messaggio",
+      "sent": "Inviato",
+      "received": "Ricevuto",
+      "delivery_time": "Tempo di consegna",
+      "in_reply_to": "In-Reply-To",
+      "references": "Riferimenti",
+      "thread_id": "ID conversazione",
+      "size": "Dimensione",
+      "mime_type": "Tipo MIME",
+      "attachments_summary": "{count} file · {size}",
+      "list_id": "ID lista",
+      "list_help": "Guida lista",
+      "list_post": "Invio alla lista",
+      "list_unsubscribe": "Annulla iscrizione",
+      "iprev": "DNS inverso",
+      "spam_status": "Stato spam",
+      "ai_verdict": "Verdetto IA",
+      "account": "Account",
+      "no_subject": "(nessun oggetto)"
+    }
   },
   "email_composer": {
     "new_message": "Nuovo messaggio",
@@ -494,7 +548,16 @@
     "close_draft_message": "Hai modifiche non salvate. Vuoi salvare come bozza o eliminare?",
     "save_draft": "Salva bozza",
     "drop_files": "Trascina i file per allegarli",
-    "show_less": "Mostra meno"
+    "show_less": "Mostra meno",
+    "forgot_attachment": {
+      "title": "Hai dimenticato un allegato?",
+      "message": "Il tuo messaggio menziona \"{keyword}\" ma nessun file è allegato. Inviare comunque?",
+      "send_anyway": "Invia comunque",
+      "back": "Torna alla modifica"
+    },
+    "add_link": "Aggiungi link",
+    "link_url_prompt": "Inserisci l'URL",
+    "sending": "Invio in corso..."
   },
   "confirm_dialog": {
     "confirm": "Conferma",
@@ -606,7 +669,25 @@
     "switch_to_dutch": "Passa all'olandese",
     "switch_to_portuguese": "Passa al portoghese",
     "switch_to_russian": "Passa al russo",
-    "switching": "Cambio lingua in corso..."
+    "switching": "Cambio lingua in corso...",
+    "switch": "Cambia lingua",
+    "current": "Lingua corrente",
+    "polish": "Polski",
+    "switch_to_polish": "Passa al polacco",
+    "en": "English",
+    "fr": "Français",
+    "de": "Deutsch",
+    "es": "Español",
+    "it": "Italiano",
+    "ja": "日本語",
+    "ko": "한국어",
+    "lv": "Latviešu",
+    "nl": "Nederlands",
+    "pl": "Polski",
+    "pt": "Português",
+    "ru": "Русский",
+    "uk": "Українська",
+    "zh": "简体中文"
   },
   "settings": {
     "title": "Impostazioni",
@@ -633,20 +714,30 @@
       "filters": "Filtri",
       "templates": "Modelli",
       "folders": "Cartelle",
-      "keywords": "Parole chiave",
+      "keywords": "Etichette",
       "security": "Sicurezza",
       "encryption": "Cifratura",
       "files": "File",
-      "contacts": "Contacts",
+      "contacts": "Contatti",
       "sidebar_apps": "App nella barra laterale",
-      "notifications": "Notifiche"
+      "notifications": "Notifiche",
+      "layout": "Layout",
+      "reading": "Lettura",
+      "composing": "Composizione",
+      "content_senders": "Contenuto e mittenti",
+      "about_data": "Informazioni e dati",
+      "debug": "Debug"
     },
     "tab_groups": {
       "general": "Generale",
       "account": "Account e identità",
       "organization": "Organizzazione e-mail",
       "apps": "Applicazioni",
-      "system": "Sistema"
+      "system": "Sistema",
+      "appearance": "Aspetto",
+      "mail": "Posta",
+      "privacy": "Privacy e sicurezza",
+      "advanced": "Avanzate"
     },
     "appearance": {
       "title": "Aspetto",
@@ -688,8 +779,8 @@
         "below_subject": "Sotto l'oggetto"
       },
       "toolbar_labels": {
-        "label": "Show Toolbar Labels",
-        "description": "Display text labels next to toolbar icons. Disable to save space once you are familiar with the icons."
+        "label": "Mostra etichette della barra degli strumenti",
+        "description": "Mostra le etichette di testo accanto alle icone della barra degli strumenti. Disattivare per risparmiare spazio una volta acquisita familiarità con le icone."
       },
       "hide_account_switcher": {
         "label": "Nascondi selettore account dalla barra laterale",
@@ -698,26 +789,34 @@
       "show_rail_account_list": {
         "label": "Mostra avatar account nella barra di navigazione",
         "description": "Visualizza i cerchi degli account individuali nella parte inferiore della barra di navigazione per un cambio rapido, con un pulsante di disconnessione sotto."
+      },
+      "unified_mailbox": {
+        "label": "Casella di posta unificata",
+        "description": "Mostra le cartelle combinate (Posta in arrivo, Inviati, ecc.) di tutti gli account collegati"
+      },
+      "colorful_sidebar_icons": {
+        "label": "Icone colorate nella barra laterale",
+        "description": "Colora le icone di cartelle ed etichette per tipo (Posta in arrivo blu, Spam rosso, Inviati verde, ecc.). Disattiva per una barra laterale monocromatica."
       }
     },
     "keywords": {
-      "title": "Parole chiave e-mail",
-      "description": "Definisci parole chiave (etichette) per organizzare le tue e-mail con colori.",
-      "add_keyword": "Aggiungi parola chiave",
+      "title": "Etichette e-mail",
+      "description": "Definisci etichette per organizzare le tue e-mail con i colori. Vengono archiviate come parole chiave JMAP sul server.",
+      "add_keyword": "Aggiungi etichetta",
       "reset_defaults": "Ripristina predefiniti",
       "label_field": "Nome visualizzato",
       "label_placeholder": "es. Lavoro, Personale, Urgente",
-      "id_field": "ID parola chiave",
+      "id_field": "ID etichetta",
       "id_placeholder": "es. lavoro, personale",
       "color_field": "Colore",
-      "id_exists": "Questo ID parola chiave esiste già",
-      "edit": "Modifica parola chiave",
-      "delete": "Elimina parola chiave",
+      "id_exists": "Questo ID etichetta esiste già",
+      "edit": "Modifica etichetta",
+      "delete": "Elimina etichetta",
       "save": "Salva",
       "add": "Aggiungi",
       "cancel": "Annulla",
-      "migrating": "Aggiornamento parola chiave sulle email esistenti…",
-      "migration_error": "Impossibile aggiornare la parola chiave sulle email esistenti"
+      "migrating": "Aggiornamento dell'etichetta nelle e-mail esistenti…",
+      "migration_error": "Impossibile aggiornare l'etichetta nelle e-mail esistenti"
     },
     "notifications": {
       "test_sound": "Testa il suono di notifica",
@@ -751,6 +850,23 @@
         "sound_desc": "Riproduci un suono per i promemoria del calendario",
         "invitation_parsing": "Analizza inviti via e-mail",
         "invitation_parsing_desc": "Rileva inviti calendario negli allegati e mostra azioni calendario"
+      },
+      "push": {
+        "confirm_disable_message": "Questo dispositivo non riceverà più avvisi quando il sito è chiuso.",
+        "confirm_disable_title": "Disabilitare le notifiche in background?",
+        "description": "Ricevi notifiche di sistema per la nuova posta quando questo sito è chiuso. Consegnato tramite il relay push Bulwark; il relay non vede mai il contenuto della posta.",
+        "disable": "Disabilita",
+        "enable": "Abilita",
+        "ios_hint": "Su iOS, installa prima il sito sulla schermata Home: Safari consegna Web Push solo alle PWA installate.",
+        "reenable": "Registra di nuovo",
+        "relay_desc": "Per impostazione predefinita usa il relay Bulwark ospitato. Cambialo solo se ospiti in autonomia.",
+        "relay_label": "Relay push",
+        "relay_placeholder": "https://notifications.relay.example.com",
+        "status_active": "Attivo su questo dispositivo",
+        "status_busy": "In elaborazione…",
+        "status_inactive": "Non abilitato su questo dispositivo",
+        "status_unsupported": "Questo browser non supporta Web Push",
+        "title": "Notifiche in background"
       }
     },
     "language_region": {
@@ -834,6 +950,13 @@
         "label": "Seleziona automaticamente l'indirizzo di risposta",
         "description": "Quando rispondi, passa automaticamente l'indirizzo mittente all'identità che ha ricevuto il messaggio originale"
       },
+      "sub_address_delimiter": {
+        "label": "Delimitatore sub-indirizzo",
+        "description": "Carattere che separa il tuo nome utente dall'etichetta del sub-indirizzo. Usa il delimitatore configurato sul tuo server di posta (es. utente{delimiter}tag@dominio.com).",
+        "option": "{delimiter}  (utente{delimiter}tag@dominio.com)",
+        "custom": "Personalizzato…",
+        "custom_input_label": "Carattere delimitatore personalizzato"
+      },
       "show_preview": {
         "label": "Mostra anteprima testo",
         "description": "Visualizza l'anteprima del messaggio nell'elenco",
@@ -887,7 +1010,10 @@
         "remove": "Rimuovi",
         "close": "Chiudi",
         "invalid_email": "Inserisci un indirizzo email valido",
-        "already_added": "Questo mittente è già attendibile"
+        "already_added": "Questo mittente è già attendibile",
+        "save_error": "Salvataggio non riuscito - controlla il log di debug Contatti per i dettagli",
+        "use_address_book_label": "Sincronizza con la rubrica",
+        "use_address_book_description": "Salva i mittenti attendibili in una rubrica \"Mittenti attendibili\" dedicata per sincronizzarli su tutti i tuoi dispositivi"
       },
       "hover_actions": {
         "label": "Azioni rapide al passaggio del mouse",
@@ -914,6 +1040,23 @@
         "button": "Imposta come predefinito",
         "success": "Il browser ha chiesto di impostare come predefinito",
         "error": "Il tuo browser non supporta questa funzionalità"
+      },
+      "attachment_reminder": {
+        "label": "Promemoria allegati",
+        "description": "Avvisa prima dell'invio quando il messaggio menziona allegati ma nessuno è allegato",
+        "keywords_label": "Parole chiave di attivazione",
+        "keywords_description": "Parole o frasi che attivano il promemoria quando trovate nel messaggio",
+        "add_placeholder": "Aggiungi parola chiave...",
+        "add": "Add",
+        "remove": "Rimuovi"
+      },
+      "hide_inline_image_attachments": {
+        "label": "Nascondi le immagini inline dagli allegati",
+        "description": "Le immagini incorporate nel corpo del messaggio non vengono elencate come allegati separati"
+      },
+      "attachment_image_previews": {
+        "label": "Mostra anteprime delle immagini negli allegati",
+        "description": "Mostra gli allegati immagine come miniature anziché con icone di file generiche"
       }
     },
     "composer": {
@@ -1024,7 +1167,14 @@
         "disabled": "Autenticazione a due fattori disabilitata",
         "enable_error": "Impossibile abilitare la 2FA",
         "disable_error": "Impossibile disabilitare la 2FA",
-        "setup_instructions": "Copia questo URL nella tua app di autenticazione (Google Authenticator, Authy, ecc.):"
+        "setup_instructions": "Copia questo URL nella tua app di autenticazione (Google Authenticator, Authy, ecc.):",
+        "verification_code": "Codice di verifica",
+        "confirm": "Conferma",
+        "disable": "Disattiva",
+        "disable_confirm_prompt": "Inserisci la tua password per disattivare l'autenticazione a due fattori.",
+        "password_required": "La password è obbligatoria",
+        "code_required": "Il codice di verifica è obbligatorio",
+        "code_invalid": "Codice di verifica non valido. Controlla la tua app di autenticazione e riprova."
       },
       "app_passwords": {
         "title": "Password per le app",
@@ -1041,7 +1191,25 @@
         "removed": "Password per l'app rimossa",
         "add_error": "Impossibile creare la password per l'app",
         "remove_error": "Impossibile rimuovere la password per l'app",
-        "none": "Nessuna password per le app configurata"
+        "none": "Nessuna password per le app configurata",
+        "done": "Fatto",
+        "expires_label": "Scadenza (facoltativa)",
+        "copy_now_warning": "Copia questa password ora - non verrà più mostrata.",
+        "allowed_ips_label": "IP consentiti (opzionale)",
+        "allowed_ips_placeholder": "10.0.0.5, 192.168.1.0/24",
+        "allowed_ips_hint": "Separati da virgola o spazio. Lasciare vuoto per consentire qualsiasi IP."
+      },
+      "api_keys": {
+        "title": "Chiavi API",
+        "description": "Crea chiavi API per script e integrazioni che comunicano direttamente con il server",
+        "name_label": "Nome chiave",
+        "name_placeholder": "es. Script di backup, CI runner",
+        "copy_now_warning": "Copia subito questa chiave API - non verrà mostrata di nuovo.",
+        "added": "Chiave API creata",
+        "removed": "Chiave API rimossa",
+        "add_error": "Impossibile creare la chiave API",
+        "remove_error": "Impossibile rimuovere la chiave API",
+        "none": "Nessuna chiave API configurata"
       },
       "encryption": {
         "section_title": "Crittografia a riposo",
@@ -1119,7 +1287,7 @@
       "warnings": {
         "end_before_start": "La data di fine deve essere successiva alla data di inizio",
         "start_in_past": "La data di inizio è nel passato",
-        "empty_body": "Il corpo del messaggio è vuoto — i destinatari riceveranno una risposta vuota"
+        "empty_body": "Il corpo del messaggio è vuoto - i destinatari riceveranno una risposta vuota"
       }
     },
     "folders": {
@@ -1182,7 +1350,9 @@
         "email": "Visualizzazione email",
         "email_description": "Rendering delle email, elaborazione TNEF e segna come letto",
         "push": "Notifiche push",
-        "push_description": "Configurazione e recapito delle notifiche push"
+        "push_description": "Configurazione e recapito delle notifiche push",
+        "contacts": "Contatti e rubriche",
+        "contacts_description": "Sincronizzazione contatti, operazioni rubrica e mittenti attendibili"
       },
       "settings_sync": {
         "label": "Sincronizzazione impostazioni",
@@ -1191,6 +1361,10 @@
       "sender_favicons": {
         "label": "Favicon dei mittenti (Sperimentale)",
         "description": "Mostra le icone dei siti web come immagini profilo per i mittenti aziendali"
+      },
+      "show_avatars_in_junk": {
+        "label": "Mostra avatar nella cartella spam",
+        "description": "Mostra immagini profilo e favicon dei mittenti nella cartella spam. Disattivato per impostazione predefinita per non dare apparenza legittima ai tentativi di phishing."
       },
       "keyboard_shortcuts": {
         "label": "Scorciatoie da tastiera",
@@ -1225,12 +1399,20 @@
       "manage_description": "Aggiungi, modifica o rimuovi app personalizzate dalla barra laterale"
     },
     "contacts": {
-      "title": "Contacts",
-      "description": "Import and export your contacts",
-      "import_label": "Import Contacts",
-      "import_description": "Import contacts from a vCard (.vcf) file",
-      "export_label": "Export Contacts",
-      "export_description": "Export all contacts as a vCard (.vcf) file"
+      "title": "Contatti",
+      "description": "Importa ed esporta i tuoi contatti",
+      "import_label": "Importa contatti",
+      "import_description": "Importa contatti da un file vCard (.vcf)",
+      "export_label": "Esporta contatti",
+      "export_description": "Esporta tutti i contatti come file vCard (.vcf)",
+      "manage_title": "Rubriche",
+      "manage_description": "Rinomina le tue rubriche",
+      "no_address_books": "Nessuna rubrica trovata",
+      "categories_title": "Categorie",
+      "categories_description": "Rinomina le categorie dei contatti",
+      "no_categories": "Nessuna categoria trovata",
+      "group_by_letter_description": "Mostra intestazioni alfabetiche nell'elenco dei contatti",
+      "group_by_letter_label": "Raggruppa per prima lettera"
     },
     "filters": {
       "title": "Filtri email",
@@ -1306,7 +1488,7 @@
       "reject_message": "Messaggio di rifiuto",
       "reject_placeholder": "La tua email è stata rifiutata",
       "label_name": "Nome dell'etichetta",
-      "label_placeholder": "es. importante",
+      "label_placeholder": "Seleziona etichetta",
       "header_name": "Nome dell'intestazione",
       "header_placeholder": "es. X-Mailing-List",
       "size_bytes": "Dimensione in byte",
@@ -1356,7 +1538,9 @@
       "rule_summary": {
         "conditions_count": "{count, plural, one {# condizione} other {# condizioni}}",
         "actions_count": "{count, plural, one {# azione} other {# azioni}}"
-      }
+      },
+      "origin_external": "Esterno",
+      "managed_by_tooltip": "Gestito da {source}. Modificalo in quell'app o usa l'editor Sieve grezzo."
     },
     "templates": {
       "title": "Modelli email",
@@ -1397,10 +1581,10 @@
         "description": "Configura come vengono visualizzati file e cartelle"
       },
       "folder_layout": {
-        "label": "Folder Navigation",
-        "description": "Choose how folders are displayed: inline with files or in a sidebar tree",
-        "inline": "Inline",
-        "sidebar": "Sidebar"
+        "label": "Navigazione cartelle",
+        "description": "Scegli come visualizzare le cartelle: in linea con i file o in un albero nella barra laterale",
+        "inline": "In linea",
+        "sidebar": "Barra laterale"
       },
       "default_view": {
         "label": "Vista predefinita",
@@ -1484,6 +1668,43 @@
     "remove_color": "Rimuovi etichetta",
     "items_selected": "{count} messaggi selezionati",
     "edit_draft": "Modifica bozza"
+  },
+  "mailbox_context_menu": {
+    "mark_folder_read": "Segna cartella come letta",
+    "mark_folder_tree_read": "Segna cartella e sottocartelle come lette",
+    "mark_all_folders_read": "Segna tutte le cartelle come lette",
+    "new_subfolder": "Nuova sottocartella...",
+    "new_folder": "Nuova cartella...",
+    "rename": "Rinomina...",
+    "empty_folder": "Svuota cartella",
+    "empty_folder_generic": "Svuota cartella",
+    "delete_folder": "Elimina cartella",
+    "refresh": "Aggiorna",
+    "mark_all_confirm_title": "Segna tutte le cartelle come lette",
+    "mark_all_confirm_message": "Segnare tutti i messaggi non letti del tuo account personale come letti?",
+    "delete_confirm_title": "Elimina cartella",
+    "delete_confirm_message": "Eliminare definitivamente la cartella \"{name}\"? Questa azione non può essere annullata.",
+    "prompt_new_subfolder": "Inserisci un nome per la nuova sottocartella.",
+    "prompt_new_folder": "Inserisci un nome per la nuova cartella.",
+    "prompt_rename": "Inserisci un nuovo nome per questa cartella.",
+    "toast_marked_read": "Cartella segnata come letta",
+    "toast_marked_read_count": "Segnati {count, plural, one {1 messaggio} other {# messaggi}} come letti",
+    "toast_already_read": "Nessun messaggio non letto",
+    "toast_marked_all_read": "Tutte le cartelle segnate come lette",
+    "toast_emptied": "Cartella svuotata",
+    "toast_folder_created": "Cartella creata",
+    "toast_folder_renamed": "Cartella rinominata",
+    "toast_folder_deleted": "Cartella eliminata",
+    "toast_error_mark_read": "Impossibile segnare come letto",
+    "toast_error_empty": "Impossibile svuotare la cartella",
+    "toast_error_create": "Impossibile creare la cartella",
+    "toast_error_rename": "Impossibile rinominare la cartella",
+    "toast_error_delete": "Impossibile eliminare la cartella",
+    "toast_error_delete_has_children": "La cartella contiene sottocartelle. Rimuoverle prima.",
+    "toast_error_delete_has_email": "La cartella non è vuota. Svuotarla prima.",
+    "placeholder_folder_name": "Nome cartella",
+    "create": "Crea",
+    "rename_confirm": "Rinomina"
   },
   "shortcuts": {
     "title": "Scorciatoie da tastiera",
@@ -1590,7 +1811,7 @@
       "use_address": "Usa questo indirizzo",
       "invalid_tag": "Il tag deve contenere solo caratteri alfanumerici e trattini",
       "tag_too_long": "Il tag deve essere di massimo 30 caratteri",
-      "help_text": "I messaggi inviati a utente+tag@dominio.com arriveranno nella tua casella di posta",
+      "help_text": "I messaggi inviati a utente{delimiter}tag@dominio.com arriveranno nella tua casella di posta",
       "validation": {
         "empty": "Il tag non può essere vuoto",
         "too_long": "Il tag deve essere di massimo {max} caratteri",
@@ -1635,6 +1856,10 @@
     "search_placeholder": "Cerca contatti...",
     "create_new": "Nuovo contatto",
     "no_category": "Senza categoria",
+    "rename_category": "Rinomina categoria",
+    "category_name_label": "Nome della categoria",
+    "category_renamed": "Categoria rinominata",
+    "category_rename_failed": "Impossibile rinominare la categoria",
     "category_added": "Contatto aggiunto a {name}",
     "category_added_plural": "{count} contatti aggiunti a {name}",
     "empty_state": "Nessun contatto",
@@ -1642,6 +1867,8 @@
     "empty_state_subtitle": "Crea il tuo primo contatto o importa da un file vCard",
     "empty_search": "Nessun contatto corrisponde alla ricerca",
     "empty_search_hint": "Prova con un altro termine di ricerca",
+    "empty_filtered": "Nessun contatto corrisponde ai filtri",
+    "empty_filtered_hint": "Modifica o cancella i filtri",
     "clear_search": "Cancella ricerca",
     "import_vcard": "Importa vCard",
     "delete_confirm_title": "Elimina contatto",
@@ -1661,7 +1888,19 @@
       "moved": "Contatto spostato in {name}",
       "moved_plural": "{count} contatti spostati in {name}",
       "move_failed": "Impossibile spostare il contatto",
-      "address_book": "Rubrica"
+      "address_book": "Rubrica",
+      "rename": "Rinomina rubrica",
+      "name_label": "Nome della rubrica",
+      "renamed": "Rubrica rinominata",
+      "rename_failed": "Impossibile rinominare la rubrica",
+      "default": "Predefinita",
+      "manage": "Gestisci rubriche",
+      "share": "Condividi rubrica",
+      "new_contact_in_book": "Nuovo contatto in questa rubrica",
+      "delete": "Elimina rubrica",
+      "confirm_delete": "Eliminare \"{name}\"? Tutti i contatti in questa rubrica verranno rimossi.",
+      "deleted": "Rubrica eliminata",
+      "delete_failed": "Impossibile eliminare la rubrica"
     },
     "detail": {
       "emails": "Indirizzi email",
@@ -1713,7 +1952,33 @@
       "import_to_smime": "Importa in S/MIME",
       "cert_already_imported": "Certificato già importato",
       "cert_imported": "Certificato importato",
-      "cert_import_failed": "Importazione del certificato non riuscita"
+      "cert_import_failed": "Importazione del certificato non riuscita",
+      "section_contact": "Contact details",
+      "section_work": "Work",
+      "section_personal": "Personal",
+      "email_default_label": "Email",
+      "phone_default_label": "Phone",
+      "address_default_label": "Address",
+      "online_service_default_label": "Online",
+      "organization_label": "Organization",
+      "title_label": "Title",
+      "role_label": "Role",
+      "language_label": "Language",
+      "related_default_label": "Related",
+      "more_actions": "Altre azioni",
+      "age_years": "{count, plural, one {1 anno} other {# anni}}",
+      "years_since": "{count, plural, one {1 anno fa} other {# anni fa}}"
+    },
+    "activity": {
+      "recent_emails": "Recent Emails",
+      "upcoming_events": "Upcoming Events",
+      "no_emails": "No recent emails",
+      "no_events": "No upcoming events",
+      "no_subject": "(No subject)",
+      "no_title": "(No title)",
+      "load_failed": "Failed to load",
+      "unknown_sender": "Unknown sender",
+      "all_day": "All day"
     },
     "form": {
       "create_title": "Nuovo contatto",
@@ -1809,7 +2074,13 @@
       "email_invalid": "Inserisci un indirizzo email valido",
       "email_error_inline": "Formato email non valido",
       "save_failed": "Impossibile salvare il contatto",
-      "delete": "Elimina"
+      "delete": "Elimina",
+      "upload_photo": "Carica foto",
+      "remove_photo": "Rimuovi foto",
+      "photo_hint": "JPG o PNG, fino a 10 MB. Verrà ridimensionata.",
+      "photo_too_large": "L'immagine è troppo grande (max 10 MB)",
+      "photo_invalid": "File immagine non valido",
+      "change_photo": "Cambia"
     },
     "groups": {
       "create": "Nuovo gruppo",
@@ -1869,6 +2140,37 @@
       "error_create": "Impossibile creare il contatto",
       "error_update": "Impossibile aggiornare il contatto",
       "error_delete": "Impossibile eliminare il contatto"
+    },
+    "context_menu": {
+      "open": "Apri",
+      "edit": "Modifica",
+      "send_email": "Invia email",
+      "add_to_group": "Aggiungi al gruppo",
+      "export_vcard": "Esporta come vCard",
+      "delete": "Elimina",
+      "call": "Chiama",
+      "duplicate": "Duplica",
+      "print": "Stampa"
+    },
+    "filters": {
+      "toggle": "Filtri",
+      "select": "Seleziona",
+      "clear": "Azzera",
+      "close": "Chiudi",
+      "title": "Filtri avanzati",
+      "organization": "Azienda",
+      "organization_placeholder": "es. Acme",
+      "job_title": "Ruolo",
+      "job_title_placeholder": "es. Designer",
+      "location": "Luogo",
+      "location_placeholder": "Città o paese",
+      "email_domain": "Dominio email",
+      "email_domain_placeholder": "esempio.com",
+      "birthday_month": "Compleanno in",
+      "any_month": "Qualsiasi mese",
+      "has_email": "Con email",
+      "has_phone": "Con telefono",
+      "has_photo": "Con foto"
     }
   },
   "calendar": {
@@ -1903,7 +2205,14 @@
       "resize": "Ridimensiona evento",
       "duplicate": "Duplica",
       "today_header": "Oggi",
-      "tomorrow_header": "Domani"
+      "tomorrow_header": "Domani",
+      "export_ics": "Esporta come .ics",
+      "copy_title": "Copia titolo",
+      "copy_link": "Copia link riunione",
+      "go_to_today": "Vai a oggi",
+      "new_all_day_event": "Nuovo evento giornata intera",
+      "new_event": "Nuovo evento",
+      "new_task": "Nuova attività"
     },
     "detail": {
       "add_note": "Aggiungi una nota...",
@@ -1941,6 +2250,7 @@
       "tentative": "Provvisorio",
       "needs_action": "In attesa di risposta",
       "remove": "Rimuovi",
+      "edit": "Modifica",
       "email_placeholder": "Aggiungi indirizzo email o cerca contatti",
       "send_invitations": "Invia inviti ai partecipanti",
       "status_summary": "{accepted} accettato/i, {pending} in attesa",
@@ -2050,7 +2360,10 @@
       "rsvp_error": "Impossibile aggiornare la risposta",
       "event_duplicated": "Evento duplicato",
       "event_error": "Salvataggio dell'evento non riuscito",
-      "task_due": "Attività in scadenza"
+      "task_due": "Attività in scadenza",
+      "event_exported": "Evento esportato",
+      "title_copied": "Titolo copiato",
+      "link_copied": "Link copiato"
     },
     "status": {
       "loading_calendars": "Caricamento calendari...",
@@ -2116,7 +2429,9 @@
       "confirm_clear": "Cancellare tutti gli eventi da \"{name}\"? Questa azione non può essere annullata.",
       "clear_events": "Cancella eventi",
       "events_cleared": "{count} eventi cancellati",
-      "error_clear": "Impossibile cancellare gli eventi del calendario"
+      "error_clear": "Impossibile cancellare gli eventi del calendario",
+      "share": "Condividi calendario",
+      "new_event_in_calendar": "Nuovo evento in questo calendario"
     },
     "subscription": {
       "title": "Abbonamento iCal",
@@ -2196,6 +2511,20 @@
       "due_today": "Scade oggi",
       "due_tomorrow": "Scade domani",
       "overdue": "Scaduta"
+    },
+    "months": {
+      "jan": "gen",
+      "feb": "feb",
+      "mar": "mar",
+      "apr": "apr",
+      "may": "mag",
+      "jun": "giu",
+      "jul": "lug",
+      "aug": "ago",
+      "sep": "set",
+      "oct": "ott",
+      "nov": "nov",
+      "dec": "dic"
     }
   },
   "advanced_search": {
@@ -2241,7 +2570,7 @@
   },
   "demo_welcome": {
     "title": "Benvenuto su Bulwark Mail",
-    "description": "Esplora un client webmail completo — direttamente nel tuo browser. Tutti i dati restano sul tuo dispositivo, quindi prova tutto.",
+    "description": "Esplora un client webmail completo - direttamente nel tuo browser. Tutti i dati restano sul tuo dispositivo, quindi prova tutto.",
     "feature_email": "Leggere e scrivere email",
     "feature_organize": "Tag, stelle e cartelle",
     "feature_shortcuts": "Scorciatoie da tastiera",
@@ -2345,10 +2674,10 @@
     "settings_behavior": "Comportamento",
     "settings_show_hidden": "Mostra file nascosti",
     "settings_show_hidden_desc": "Visualizza file e cartelle che iniziano con un punto",
-    "settings_folder_layout": "Folder Navigation",
-    "settings_folder_layout_desc": "Choose how folders are displayed: inline with files or in a sidebar tree",
-    "settings_folder_layout_inline": "Inline",
-    "settings_folder_layout_sidebar": "Sidebar",
+    "settings_folder_layout": "Navigazione cartelle",
+    "settings_folder_layout_desc": "Scegli come visualizzare le cartelle: in linea con i file o in un albero nella barra laterale",
+    "settings_folder_layout_inline": "In linea",
+    "settings_folder_layout_sidebar": "Barra laterale",
     "disabled_title": "La funzionalità File è stata disabilitata dal tuo amministratore",
     "disabled_description": "I caricamenti di file di grandi dimensioni tramite WebDAV possono causare instabilità di Stalwart/RocksDB, inclusi crash di memoria e utilizzo irrecuperabile del disco. I file eliminati potrebbero non essere immediatamente rimossi dallo storage. Questa funzionalità non è consigliata per ambienti di produzione.",
     "stability_warning": "I caricamenti di file di grandi dimensioni possono causare instabilità del server. I file eliminati potrebbero non essere immediatamente rimossi dallo storage. Usare con cautela."
@@ -2468,16 +2797,42 @@
     "create_event_title": "Crea un evento",
     "create_event_desc": "Fai clic su questo pulsante per creare un nuovo evento del calendario. Puoi impostare un titolo, data, ora e aggiungere partecipanti.",
     "event_modal_title": "Dettagli evento",
-    "event_modal_desc": "Ecco il modulo dell'evento. Inserisci il titolo, scegli data e ora, aggiungi un luogo o partecipanti. Premi salva quando hai finito — o chiudilo e vai avanti.",
+    "event_modal_desc": "Ecco il modulo dell'evento. Inserisci il titolo, scegli data e ora, aggiungi un luogo o partecipanti. Premi salva quando hai finito - o chiudilo e vai avanti.",
     "contacts_list_title": "I tuoi contatti",
     "contacts_list_desc": "Ecco i tuoi contatti. Clicca su un contatto per vedere i suoi dettagli a destra. Puoi anche creare nuovi contatti, importare vCard o organizzare i contatti in gruppi.",
     "files_title": "Archiviazione file",
     "settings_tabs_title": "Menu impostazioni",
     "settings_tabs_desc": "Ecco tutte le categorie di impostazioni. Personalizza l'aspetto, gestisci le identità, configura i filtri email, imposta il calendario e molto altro.",
-    "files_desc": "Il tuo file browser ti permette di caricare, organizzare e condividere file — come un cloud personale integrato nella tua posta.",
+    "files_desc": "Il tuo file browser ti permette di caricare, organizzare e condividere file - come un cloud personale integrato nella tua posta.",
     "demo_banner_title": "Controlli demo",
-    "demo_banner_desc": "Sei in modalità demo — tutto rimane nel tuo browser. Premi 'Reimposta Demo' in qualsiasi momento per ricominciare con dati puliti.",
+    "demo_banner_desc": "Sei in modalità demo - tutto rimane nel tuo browser. Premi 'Reimposta Demo' in qualsiasi momento per ricominciare con dati puliti.",
     "quota_title": "Utilizzo dello spazio",
     "quota_desc": "Monitora le dimensioni della tua casella qui. Il cerchio si riempie man mano che utilizzi più spazio."
+  },
+  "unified_mailbox": {
+    "search_unavailable": "La ricerca non è disponibile nella vista unificata"
+  },
+  "sharing": {
+    "title": "Condividi \"{name}\"",
+    "description": "Concedi l'accesso ad altri utenti o gruppi su questo server. Le modifiche hanno effetto immediato.",
+    "no_shares": "Non ancora condiviso.",
+    "add_person": "Aggiungi persona o gruppo",
+    "search_placeholder": "Cerca per nome o email…",
+    "loading_principals": "Caricamento utenti…",
+    "no_principals": "Nessun altro utente o gruppo trovato.",
+    "no_match": "Nessun risultato.",
+    "remove": "Rimuovi accesso",
+    "group": "Gruppo",
+    "share_added": "Accesso concesso",
+    "share_updated": "Accesso aggiornato",
+    "share_removed": "Accesso rimosso",
+    "share_failed": "Impossibile aggiornare la condivisione",
+    "preset": {
+      "freeBusy": "Solo libero/occupato",
+      "read": "Sola lettura",
+      "readWrite": "Lettura e scrittura",
+      "manager": "Gestore",
+      "custom": "Personalizzato"
+    }
   }
 }

@@ -8,13 +8,13 @@
 
 # Bulwark Webmail
 
-A modern, self-hosted webmail client for [Stalwart Mail Server](https://stalw.art/).<br/>
-Built with Next.js and the JMAP protocol.
+A modern, self-hosted webmail client for [Stalwart Mail Server](https://stalw.art/), built with Next.js and the JMAP protocol.
 
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL%20v3-blue.svg?logo=gnu&logoColor=white)](LICENSE)
 [![Discord](https://img.shields.io/discord/1482128142939455674?color=7289da&label=discord&logo=discord&logoColor=white)](https://discord.gg/tYCujymGrT)
-[![Version](https://img.shields.io/badge/version-1.4.11-green.svg?logo=git&logoColor=white)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.6.1-green.svg?logo=git&logoColor=white)](CHANGELOG.md)
 [![Docker](https://img.shields.io/badge/docker-ghcr.io%2Fbulwarkmail%2Fwebmail-blue?logo=docker&logoColor=white)](https://ghcr.io/bulwarkmail/webmail)
+[![Grafana](https://img.shields.io/badge/grafana-dashboard-orange?logo=grafana&logoColor=white)](https://grafana.external.bulwarkmail.org/)
 
 </div>
 
@@ -22,190 +22,56 @@ Built with Next.js and the JMAP protocol.
 
 ## Screenshots
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="screenshots/mail-dark.png" />
+  <img src="screenshots/mail-white.png" alt="Mail view" width="100%" />
+</picture>
+
 <table>
 <tr>
-<td width="50%">
-
-<img src="screenshots/inbox.png" width="100%" alt="Inbox — three-pane layout with sidebar, email list, and viewer (dark mode)">
-
-**Mail** — Three-pane layout with sidebar, email list, and viewer
-
-</td>
-<td width="50%">
-
-<img src="screenshots/calendar.png" width="100%" alt="Calendar">
-
-**Calendar** — Month, week, day, and agenda views with event management
-
-</td>
+<td width="50%"><img src="screenshots/calendar.png" alt="Calendar" /></td>
+<td width="50%"><img src="screenshots/contacts.png" alt="Contacts" /></td>
 </tr>
 <tr>
-<td width="50%">
-
-<img src="screenshots/contacts.png" width="100%" alt="Contacts">
-
-**Contacts** — Contact management with groups and vCard support
-
-</td>
-<td width="50%">
-
-<img src="screenshots/files.png" width="100%" alt="File browser">
-
-**Files** — Cloud file browser with upload, preview, and folder navigation
-
-</td>
+<td><sub><b>Calendar</b> – month, week, day, and agenda views with drag-to-reschedule, iMIP invitations, and CalDAV subscriptions.</sub></td>
+<td><sub><b>Contacts</b> – multiple address books, groups, vCard import/export, and autocomplete in the composer.</sub></td>
+</tr>
+<tr>
+<td><img src="screenshots/theme.png" alt="Themes" /></td>
+<td><img src="screenshots/plugins.png" alt="Plugins" /></td>
+</tr>
+<tr>
+<td><sub><b>Themes</b> – bundled color themes or upload your own as ZIP bundles; admins can enforce presets.</sub></td>
+<td><sub><b>Plugins</b> – extend the client with bundled or third-party plugins installed from a .zip file.</sub></td>
+</tr>
+<tr>
+<td><img src="screenshots/mail-white.png" alt="Light mode" /></td>
+<td><img src="screenshots/settings.png" alt="Settings" /></td>
+</tr>
+<tr>
+<td><sub><b>Light mode</b> – full theme support with intelligent color transformation for HTML emails.</sub></td>
+<td><sub><b>Settings</b> – appearance, identities, filters, templates, security, and more.</sub></td>
 </tr>
 </table>
 
-<details>
-<summary>More screenshots</summary>
-<table>
-<tr>
-<td width="50%">
+## Overview
 
-<img src="screenshots/inbox%20whitemode.png" width="100%" alt="Inbox — light mode">
+Bulwark is a full webmail suite, not just an inbox. It bundles the four apps most self-hosters end up wanting on the same login:
 
-**Light mode** — Full theme support with intelligent color transformation
+- **Mail** – threading, unified inbox, full-text search, Sieve filters, S/MIME, templates
+- **Calendar** – month/week/day/agenda, recurring events, iMIP invitations, CalDAV subscriptions
+- **Contacts** – multiple address books, groups, vCard import/export
+- **Files** – Stalwart's JMAP FileNode storage with previews and folder upload
 
-</td>
-<td width="50%">
+Plus the infrastructure around them: OAuth2 / OIDC SSO, TOTP 2FA, multi-account (up to 5 at once), 15 languages, PWA install, dark/light themes, a plugin system with an extension marketplace, and a admin dashboard.
 
-<img src="screenshots/settings.png" width="100%" alt="Settings">
-
-**Settings** — Appearance, identities, filters, templates, and more
-
-</td>
-</tr>
-<tr>
-<td width="50%">
-
-<img src="screenshots/login.png" width="100%" alt="Login page">
-
-**Login** — Configurable branding with OAuth2/OIDC and 2FA support
-
-</td>
-<td width="50%">
-</td>
-</tr>
-</table>
-</details>
-
-## Features
-
-### Mail
-
-- **Read, compose, reply, reply-all, forward** with rich HTML rendering
-- **Threading** — Gmail-style inline expansion with thread navigation
-- **Draft auto-save** with discard confirmation
-- **Attachments** — upload, download, and inline preview
-- **Search** — full-text with JMAP filter panel, search chips, cross-mailbox queries, wildcard support, and OR conditions
-- **Batch operations** — multi-select with checkboxes, archive, delete, move, tag
-- **Archive modes** — archive directly or organize archived mail by year or month
-- **Print** emails directly from the viewer
-- **Answered/forwarded status icons** in email list and thread views
-- **Color tags/labels** and star/unstar
-- **Virtual scrolling** for large mailboxes
-- **Quick reply** from the viewer
-- **Sender avatars** — favicon-based with negative caching for performance
-- **Recipient popover** for quick contact interaction
-- **TNEF support** — extract Outlook `winmail.dat` message bodies and attachments automatically
-- **Folder management** — create, rename, delete folders with icon picker and subfolder support
-- **Tag counts** — unread and total counts displayed in sidebar
-
-### Calendar
-
-- **Month, week, day, and agenda views** with mini-calendar sidebar
-- **Event hover preview** popover with details
-- **Drag-and-drop rescheduling**, click-drag creation, edge-resize (15-min snap)
-- **Recurring events** with edit/delete scope (this / this and following / all)
-- **Participant scheduling** — iTIP invitations, organizer/attendee UI, RSVP
-- **Inline calendar invitations** in email viewer — auto-detect `.ics`, RSVP, import
-- **iCalendar import** with preview and bulk create
-- **Task management** — create, edit, and track tasks with due dates, priority, and completion status
-- **Week numbers** in mini-calendar sidebar
-- **Notifications** with configurable sound, alert persistence, and sound picker with preview playback
-- **Real-time sync** via JMAP push
-
-### Contacts
-
-- **Contact management** with JMAP sync (RFC 9553/9610) and local fallback
-- **Contact groups** with group expansion and member management
-- **vCard import/export** (RFC 6350) with duplicate detection
-- **Autocomplete** in composer (To/Cc/Bcc)
-- **Bulk operations** — multi-select, delete, group add, export
-
-### Filters & Automation
-
-- **Server-side email filters** via JMAP Sieve Scripts (RFC 9661)
-- **Visual rule builder** — conditions (From, To, Subject, Size, Body…) and actions (Move, Forward, Star, Discard…)
-- **Raw Sieve editor** with syntax validation
-- **Vacation responder** with date range scheduling and sidebar indicator
-- **Email templates** — reusable, categorized, with placeholder auto-fill (`{{recipientName}}`, `{{date}}`, etc.)
-
-### Files
-
-- **File browser** with JMAP FileNode cloud storage (Stalwart native)
-- **Upload and download** files with progress tracking and folder upload support
-- **Folder navigation** with breadcrumb path and tree sidebar
-- **Grid and list views** with sorting by name, size, or date
-- **Clipboard operations** — cut, copy, paste, duplicate files
-- **File preview** for images, text, audio, video, and more
-- **Favorites and recent files** for quick access
-- **Bulk operations** — multi-select, delete, move, download
-
-### Security & Privacy
-
-- **External content blocked** by default — trusted senders list for auto-load
-- **HTML sanitization** via DOMPurify with XSS prevention
-- **S/MIME** — manage certificates, sign outgoing mail, encrypt to recipients, decrypt messages, and verify signatures
-- **SPF/DKIM/DMARC** status indicators
-- **OAuth2/OIDC with PKCE** for SSO (Keycloak, Authentik, or built-in), with OAuth-only mode and non-interactive SSO for embedded/iframe deployments
-- **TOTP two-factor authentication**
-- **Account security panel** — manage passwords and 2FA via Stalwart admin API
-- **"Remember me"** — AES-256-GCM encrypted httpOnly cookie (opt-in)
-- **Security headers** — CSP with per-request nonce, X-Frame-Options, Referrer-Policy
-- **Newsletter unsubscribe** (RFC 2369)
-
-### Interface
-
-- **Three-pane layout** — sidebar, email list, viewer with resizable columns
-- **Dark and light themes** with intelligent email color transformation
-- **Always-light email rendering** option for problematic HTML messages in dark theme
-- **Responsive** — desktop sidebar + mobile bottom tab bar with tablet support
-- **Keyboard shortcuts** — full navigation without a mouse
-- **Drag-and-drop** email organization between mailboxes and tag assignment
-- **Interactive guided tour** — onboarding walkthrough for new users
-- **Right-click context menus**, toast notifications with undo, form validation with shake feedback
-- **Customizable toolbar** position, custom favicon, sidebar/login logos, and login page branding
-- **Sidebar apps** — pin custom tools to the navigation rail and open them inline or in a new tab
-- **Settings sync** — preferences synchronized with the server (encrypted)
-- **Storage quota** display
-- **Shared folders** — multi-account access
-- **Accessibility** — WCAG AA contrast, reduced-motion support, focus trap, screen reader live regions
-
-### Internationalization
-
-8 languages: English · Français · 日本語 · Español · Italiano · Deutsch · Nederlands · Português
-
-Automatic browser detection with persistent preference.
-
-### Identity Management
-
-- **Multiple sender identities** with per-identity signatures
-- **Identity refresh** — keep the identity manager aligned with server-side changes after edits
-- **Sub-addressing** — `user+tag@domain.com` with contextual tag suggestions
-- **Identity badges** in viewer and email list
-
-### Operations
-
-- **Automatic update check** — server logs when a newer release is available
-- **Demo mode** — try the webmail with fixture data for emails, calendars, contacts, files, filters, identities, and mailboxes — no mail server required
+Full feature list: **[FEATURES.md](FEATURES.md)**.
 
 ---
 
 ## Quick Start
 
-### Docker (recommended)
+### Docker
 
 ```bash
 docker run -d -p 3000:3000 \
@@ -217,7 +83,7 @@ Or with Docker Compose:
 
 ```bash
 cp .env.example .env.local
-# Edit .env.local — set JMAP_SERVER_URL
+# Edit .env.local – set JMAP_SERVER_URL
 docker compose up -d
 ```
 
@@ -228,21 +94,21 @@ git clone https://github.com/bulwarkmail/webmail.git
 cd webmail
 npm install
 cp .env.example .env.local
-# Edit .env.local — set JMAP_SERVER_URL
+# Edit .env.local – set JMAP_SERVER_URL
 npm run build && npm start
 ```
 
 ### Development
 
 ```bash
-npm run dev        # Start dev server (mock JMAP server included)
-npm run typecheck  # Type checking
-npm run lint       # Linting
+npm run dev        # Dev server with a mock JMAP server
+npm run typecheck
+npm run lint
 ```
 
 ## Configuration
 
-Edit `.env.local`:
+All variables are evaluated at runtime, so Docker deployments can be reconfigured without rebuilding. Edit `.env.local`:
 
 ```env
 # Required
@@ -252,26 +118,25 @@ JMAP_SERVER_URL=https://mail.example.com
 APP_NAME=My Webmail
 ```
 
-All variables are **runtime** — Docker deployments can be configured without rebuilding.
-
 <details>
-<summary>Server Listen Address</summary>
+<summary>Server listen address</summary>
 
 ```env
 HOSTNAME=0.0.0.0    # Default; use "::" for IPv6
-PORT=3000            # Default listen port
+PORT=3000
 ```
 
 </details>
 
 <details>
-<summary>OAuth2/OIDC (SSO)</summary>
+<summary>OAuth2 / OIDC</summary>
 
 ```env
 OAUTH_ENABLED=true
 OAUTH_CLIENT_ID=webmail
 OAUTH_CLIENT_SECRET=              # optional, for confidential clients
-OAUTH_ISSUER_URL=                 # optional, for external IdPs (Keycloak, Authentik)
+OAUTH_CLIENT_SECRET_FILE=         # path to a file containing the secret
+OAUTH_ISSUER_URL=                 # optional, for external IdPs
 ```
 
 Endpoints are auto-discovered via `.well-known/oauth-authorization-server` or `.well-known/openid-configuration`.
@@ -279,13 +144,97 @@ Endpoints are auto-discovered via `.well-known/oauth-authorization-server` or `.
 </details>
 
 <details>
-<summary>Remember Me</summary>
+<summary>Session & settings sync</summary>
 
 ```env
-SESSION_SECRET=your-secret-key    # Generate with: openssl rand -base64 32
+SESSION_SECRET=                      # openssl rand -base64 32
+SESSION_SECRET_FILE=/session-secret  # path to a file containing the secret
+
+SETTINGS_SYNC_ENABLED=true
+SETTINGS_DATA_DIR=./data/settings    # mount as a volume in Docker
 ```
 
-Credentials encrypted with AES-256-GCM, stored in an httpOnly cookie (30-day expiry).
+Credentials are encrypted with AES-256-GCM and stored in an httpOnly cookie (30-day expiry). Settings sync stores per-account preferences encrypted at rest and requires `SESSION_SECRET`.
+
+</details>
+
+<details>
+<summary>Custom JMAP endpoint</summary>
+
+```env
+ALLOW_CUSTOM_JMAP_ENDPOINT=true
+```
+
+Shows a "JMAP Server" field on the login form. External servers must CORS-allow the webmail origin.
+
+</details>
+
+<details>
+<summary>Branding & PWA</summary>
+
+```env
+APP_NAME=My Webmail
+APP_SHORT_NAME=Webmail
+APP_DESCRIPTION=Your personal mail
+
+FAVICON_URL=/branding/favicon.svg
+PWA_ICON_URL=/branding/icon.svg      # falls back to FAVICON_URL
+PWA_THEME_COLOR=#3b82f6
+PWA_BACKGROUND_COLOR=#ffffff
+
+APP_LOGO_LIGHT_URL=/branding/logo-light.svg
+APP_LOGO_DARK_URL=/branding/logo-dark.svg
+LOGIN_LOGO_LIGHT_URL=/branding/login-light.svg
+LOGIN_LOGO_DARK_URL=/branding/login-dark.svg
+
+LOGIN_COMPANY_NAME=My Company
+LOGIN_WEBSITE_URL=https://example.com
+LOGIN_IMPRINT_URL=https://example.com/imprint
+LOGIN_PRIVACY_POLICY_URL=https://example.com/privacy
+```
+
+</details>
+
+<details>
+<summary>Extension directory</summary>
+
+```env
+EXTENSION_DIRECTORY_URL=https://extensions.bulwarkmail.org
+```
+
+Enables the admin marketplace for browsing and installing plugins and themes.
+
+</details>
+
+<details>
+<summary>Stalwart integration & logging</summary>
+
+```env
+STALWART_FEATURES=true               # password change, Sieve filters, etc.
+
+LOG_FORMAT=text                      # "text" or "json"
+LOG_LEVEL=info                       # error | warn | info | debug
+```
+
+</details>
+
+<details>
+<summary>Subpath / reverse proxy mount</summary>
+
+To serve the webmail at a subpath (e.g. `https://example.com/webmail`):
+
+```env
+NEXT_PUBLIC_BASE_PATH=/webmail
+NEXT_PUBLIC_LOCALE_PREFIX=always     # avoids next-intl rewrite loops
+```
+
+Unlike most other variables, `NEXT_PUBLIC_BASE_PATH` is read at **build time** because Next.js bakes it into emitted asset URLs. To use it with the published Docker image, build your own image with the variable set:
+
+```bash
+docker build --build-arg NEXT_PUBLIC_BASE_PATH=/webmail -t bulwark-webmail .
+```
+
+Then point your reverse proxy at the container without stripping the prefix - the app expects to receive requests under `/webmail/...` and serves all routes (`/webmail/api/...`, `/webmail/_next/static/...`, `/webmail/sw.js`, etc.) accordingly.
 
 </details>
 
@@ -319,19 +268,16 @@ Credentials encrypted with AES-256-GCM, stored in an httpOnly cookie (30-day exp
 
 ## Why Stalwart?
 
-[Stalwart](https://github.com/stalwartlabs/mail-server) is a mail server written in Rust with **native JMAP support** — not IMAP/SMTP with JMAP bolted on. It handles JMAP, IMAP, SMTP, and ManageSieve in a single binary. Self-hosted, no third-party dependencies.
+[Stalwart](https://github.com/stalwartlabs/mail-server) is a Rust mail server with native JMAP support – not IMAP/SMTP with JMAP bolted on. It handles JMAP, IMAP, SMTP, and ManageSieve in a single self-hosted binary with no third-party dependencies.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[GNU AGPL v3](LICENSE)
-
-This repository also preserves the original MIT attribution notice for the
-fork lineage in [NOTICE](NOTICE).
+[GNU AGPL v3](LICENSE). This repository preserves the original MIT attribution for the fork lineage in [NOTICE](NOTICE).
 
 ## Acknowledgments
 
-Thanks to [root-fr/jmap-webmail](https://github.com/root-fr/jmap-webmail/) and [@ma2t](https://github.com/ma2t) for doing most of the groundwork that this project builds upon.
+Thanks to [root-fr/jmap-webmail](https://github.com/root-fr/jmap-webmail/) and [@ma2t](https://github.com/ma2t) for the groundwork this project builds upon.

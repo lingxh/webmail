@@ -12,7 +12,7 @@ import { useAccountStore } from './account-store';
 import { fetchConfig } from '@/hooks/use-config';
 import { debug } from '@/lib/debug';
 import { generateAccountId } from '@/lib/account-utils';
-import { replaceWindowLocation, getPathPrefix, getLocaleFromPath } from '@/lib/browser-navigation';
+import { replaceWindowLocation, getPathPrefix, getLocaleFromPath, apiFetch } from '@/lib/browser-navigation';
 import { notifyParent } from '@/lib/iframe-bridge';
 import { snapshotAccount, restoreAccount, clearAllStores, evictAccount, evictAll } from '@/lib/account-state-manager';
 import type { Identity } from '@/lib/jmap/types';
@@ -47,7 +47,9 @@ interface AuthState {
   checkAuth: () => Promise<void>;
   clearError: () => void;
   syncIdentities: () => void;
+  refreshIdentities: () => Promise<void>;
   getClientForAccount: (accountId: string) => JMAPClient | undefined;
+  getAllConnectedClients: () => Map<string, JMAPClient>;
 }
 
 const ERROR_PATTERNS: Array<{ key: string; matches: string[] }> = [
@@ -94,7 +96,7 @@ async function syncStalwartAuthContext(
   slot: number,
 ): Promise<void> {
   try {
-    const response = await fetch('/api/auth/stalwart-context', {
+    const response = await apiFetch('/api/auth/stalwart-context', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ serverUrl, username, authHeader, slot }),
@@ -402,7 +404,7 @@ export const useAuthStore = create<AuthState>()(
 
           if (totp) {
             try {
-              const tokenRes = await fetch('/api/auth/totp-token-exchange', {
+              const tokenRes = await apiFetch('/api/auth/totp-token-exchange', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ serverUrl, username, password: effectivePassword, slot: cookieSlot }),
@@ -428,7 +430,7 @@ export const useAuthStore = create<AuthState>()(
             if (!upgradedToOAuth) {
               const { useTotpReauthStore } = await import('@/stores/totp-reauth-store');
               client.enableTotpReauth(password, () => useTotpReauthStore.getState().requestTotp());
-              debug.log('auth', 'TOTP re-auth enabled — user will be prompted for fresh codes on session expiry');
+              debug.log('auth', 'TOTP re-auth enabled - user will be prompted for fresh codes on session expiry');
             }
           }
 
@@ -469,7 +471,7 @@ export const useAuthStore = create<AuthState>()(
           if (rememberMe && !upgradedToOAuth) {
             // For basic auth (no TOTP or TOTP upgrade failed), store encrypted credentials
             try {
-              const res = await fetch(`/api/auth/session?slot=${cookieSlot}`, {
+              const res = await apiFetch(`/api/auth/session?slot=${cookieSlot}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ serverUrl, username, password: effectivePassword, slot: cookieSlot }),
@@ -599,14 +601,23 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null, isRateLimited: false, rateLimitUntil: null });
 
         try {
-          // Determine slot for this account (use slot from sessionStorage if re-adding)
+          // Determine slot for this account (use slot from sessionStorage if re-adding).
+          // Note: `parseInt(getItem(...) || '0')` collapses "no value set" and
+          // "value is 0" into the same case, so the fallback to getNextCookieSlot()
+          // never fired for the common "+ Add Account" path — every OAuth account
+          // ended up on slot 0 and overwrote earlier accounts' refresh-token cookies.
+          // Distinguishing rawSlot === null from a parsed 0 fixes that. The page
+          // also writes oauth_cookie_slot before redirecting to the IdP.
           const accountStore = useAccountStore.getState();
-          const pendingSlot = typeof window !== 'undefined'
-            ? parseInt(sessionStorage.getItem('oauth_cookie_slot') || '0', 10)
-            : 0;
-          const slot = pendingSlot >= 0 && pendingSlot <= 4 ? pendingSlot : accountStore.getNextCookieSlot();
+          const rawSlot = typeof window !== 'undefined'
+            ? sessionStorage.getItem('oauth_cookie_slot')
+            : null;
+          const pendingSlot = rawSlot !== null ? parseInt(rawSlot, 10) : NaN;
+          const slot = !isNaN(pendingSlot) && pendingSlot >= 0 && pendingSlot <= 4
+            ? pendingSlot
+            : accountStore.getNextCookieSlot();
 
-          const tokenRes = await fetch(`/api/auth/token?slot=${slot}`, {
+          const tokenRes = await apiFetch(`/api/auth/token?slot=${slot}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ code, code_verifier: codeVerifier, redirect_uri: redirectUri, slot }),
@@ -657,6 +668,12 @@ export const useAuthStore = create<AuthState>()(
             hasError: false,
             isDefault: accountStore.accounts.length === 0,
           });
+          // The refresh-token cookie was written to `slot`. Force the stored
+          // cookieSlot to match: addAccount preserves the prior slot when
+          // re-adding an existing account, and recomputes via getNextCookieSlot
+          // for new accounts (which may disagree if another tab claimed a slot
+          // mid-flow). Either way, the cookie's slot is the source of truth.
+          accountStore.updateAccount(accountId, { cookieSlot: slot });
           accountStore.setActiveAccount(accountId);
 
           await syncStalwartAuthContext(serverUrl, username, client.getAuthHeader(), slot);
@@ -716,12 +733,19 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null, isRateLimited: false, rateLimitUntil: null });
 
         try {
-          // Server-side SSO: the server holds the PKCE verifier in an encrypted cookie
-          const ssoRes = await fetch('/api/auth/sso/complete', {
+          // Server-side SSO: the server holds the PKCE verifier in an encrypted cookie.
+          // Pass the next-free cookie slot so /api/auth/sso/complete writes the refresh
+          // token to the correct per-account jmap_rt_<slot> cookie. Without this the
+          // route hardcoded slot 0, which broke "+ Add Account" by overwriting the
+          // first account's refresh-token cookie.
+          const accountStore = useAccountStore.getState();
+          const slot = accountStore.getNextCookieSlot();
+
+          const ssoRes = await apiFetch('/api/auth/sso/complete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ code, state }),
+            body: JSON.stringify({ code, state, slot }),
           });
 
           if (!ssoRes.ok) {
@@ -738,8 +762,6 @@ export const useAuthStore = create<AuthState>()(
           if (!ssoServerUrl) {
             throw new Error('Server URL not configured');
           }
-
-          const accountStore = useAccountStore.getState();
 
           const refreshFn = get().refreshAccessToken;
           const client = JMAPClient.withBearer(ssoServerUrl, access_token, '', () => refreshFn());
@@ -777,10 +799,13 @@ export const useAuthStore = create<AuthState>()(
             hasError: false,
             isDefault: accountStore.accounts.length === 0,
           });
+          // The refresh-token cookie was written to `slot` by /api/auth/sso/complete.
+          // Force the stored cookieSlot to match — see loginWithOAuth above for the
+          // re-add and concurrent-tab cases this guards against.
+          accountStore.updateAccount(accountId, { cookieSlot: slot });
           accountStore.setActiveAccount(accountId);
 
-          const cookieSlot = accountStore.getAccountById(accountId)?.cookieSlot ?? 0;
-          await syncStalwartAuthContext(ssoServerUrl, username, client.getAuthHeader(), cookieSlot);
+          await syncStalwartAuthContext(ssoServerUrl, username, client.getAuthHeader(), slot);
 
           set({
             isAuthenticated: true,
@@ -840,7 +865,7 @@ export const useAuthStore = create<AuthState>()(
 
         const promise = (async () => {
           try {
-            const res = await fetch(`/api/auth/token?slot=${slot}`, { method: 'PUT' });
+            const res = await apiFetch(`/api/auth/token?slot=${slot}`, { method: 'PUT' });
 
             if (!res.ok) {
               notifyParent('sso:session-expired');
@@ -918,7 +943,7 @@ export const useAuthStore = create<AuthState>()(
         const remainingAccounts = accountStore.accounts;
 
         if (remainingAccounts.length > 0 && !wasDemoMode) {
-          // Switch to the next account — this is the one path that stays in-app
+          // Switch to the next account - this is the one path that stays in-app
           const nextAccount = remainingAccounts[0];
           clearAllStores();
 
@@ -953,7 +978,7 @@ export const useAuthStore = create<AuthState>()(
               }).catch((err) => debug.error('Failed to load identities after switch:', err));
             }
           } else {
-            // Client not in memory — clear everything and redirect.
+            // Client not in memory - clear everything and redirect.
             // Trying to async-restore during logout caused the original bug.
             debug.error(`Cannot restore next account ${nextAccount.id}, performing full logout`);
             evictAccount(nextAccount.id);
@@ -962,27 +987,27 @@ export const useAuthStore = create<AuthState>()(
           }
 
           // Background cookie cleanup for the removed account
-          fetch(`/api/auth/session?slot=${slot}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+          apiFetch(`/api/auth/session?slot=${slot}`, { method: 'DELETE', keepalive: true }).catch(() => {});
           if (wasOAuth) {
-            fetch(`/api/auth/token?slot=${slot}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+            apiFetch(`/api/auth/token?slot=${slot}`, { method: 'DELETE', keepalive: true }).catch(() => {});
           }
           return;
         }
 
-        // No accounts remaining (or demo mode) — full logout + redirect
+        // No accounts remaining (or demo mode) - full logout + redirect
         performFullLogout(set);
 
         notifyParent('sso:logout');
 
-        // Background cookie/token cleanup — keepalive ensures completion during navigation
+        // Background cookie/token cleanup - keepalive ensures completion during navigation
         if (!wasDemoMode) {
-          fetch(`/api/auth/session?slot=${slot}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+          apiFetch(`/api/auth/session?slot=${slot}`, { method: 'DELETE', keepalive: true }).catch(() => {});
           if (wasOAuth) {
-            fetch(`/api/auth/token?slot=${slot}`, { method: 'DELETE', keepalive: true }).catch(() => {});
+            apiFetch(`/api/auth/token?slot=${slot}`, { method: 'DELETE', keepalive: true }).catch(() => {});
           }
         }
 
-        // Redirect to login — this is synchronous and happens AFTER all state is cleared
+        // Redirect to login - this is synchronous and happens AFTER all state is cleared
         redirectToLogin();
       },
 
@@ -1005,8 +1030,8 @@ export const useAuthStore = create<AuthState>()(
         }
 
         // Background cookie/token cleanup
-        fetch('/api/auth/session?all=true', { method: 'DELETE', keepalive: true }).catch(() => {});
-        fetch('/api/auth/token?all=true', { method: 'DELETE', keepalive: true }).catch(() => {});
+        apiFetch('/api/auth/session?all=true', { method: 'DELETE', keepalive: true }).catch(() => {});
+        apiFetch('/api/auth/token?all=true', { method: 'DELETE', keepalive: true }).catch(() => {});
 
         redirectToLogin();
       },
@@ -1037,10 +1062,10 @@ export const useAuthStore = create<AuthState>()(
         let targetRestoreRateLimited = false;
 
         if (!targetClient) {
-          // Client not connected — try to restore
+          // Client not connected - try to restore
           try {
             if (targetAccount.authMode === 'oauth') {
-              const res = await fetch(`/api/auth/token?slot=${targetAccount.cookieSlot}`, { method: 'PUT' });
+              const res = await apiFetch(`/api/auth/token?slot=${targetAccount.cookieSlot}`, { method: 'PUT' });
               if (res.ok) {
                 const { access_token, expires_in } = await res.json();
                 const refreshFn = get().refreshAccessToken;
@@ -1057,7 +1082,7 @@ export const useAuthStore = create<AuthState>()(
                 );
               }
             } else if (targetAccount.authMode === 'basic' && targetAccount.rememberMe) {
-              const res = await fetch(`/api/auth/session?slot=${targetAccount.cookieSlot}`, { method: 'PUT' });
+              const res = await apiFetch(`/api/auth/session?slot=${targetAccount.cookieSlot}`, { method: 'PUT' });
               if (res.ok) {
                 const { serverUrl, username, password } = await res.json();
                 targetClient = new JMAPClient(serverUrl, username, password);
@@ -1103,10 +1128,10 @@ export const useAuthStore = create<AuthState>()(
             return;
           }
 
-          // Cannot restore — remove the stale account and redirect to login
+          // Cannot restore - remove the stale account and redirect to login
           evictAccount(accountId);
           accountStore.removeAccount(accountId);
-          fetch(`/api/auth/session?slot=${targetAccount.cookieSlot}`, { method: 'DELETE' }).catch(() => {});
+          apiFetch(`/api/auth/session?slot=${targetAccount.cookieSlot}`, { method: 'DELETE' }).catch(() => {});
 
           // Restore the previous account if still available
           if (state.activeAccountId && state.activeAccountId !== accountId) {
@@ -1207,9 +1232,18 @@ export const useAuthStore = create<AuthState>()(
           const restoreAccountClient = async (account: (typeof accounts)[number]): Promise<void> => {
             if (clients.has(account.id)) return;
 
+            // Basic auth without rememberMe leaves nothing to restore — the
+            // user logged in without persisting credentials. Evict silently
+            // so the login screen is shown without flagging a fake error.
+            if (account.authMode === 'basic' && !account.rememberMe) {
+              evictAccount(account.id);
+              accountStore.removeAccount(account.id);
+              continue;
+            }
+
             try {
               if (account.authMode === 'oauth') {
-                const res = await fetch(`/api/auth/token?slot=${account.cookieSlot}`, { method: 'PUT' });
+                const res = await apiFetch(`/api/auth/token?slot=${account.cookieSlot}`, { method: 'PUT' });
                 if (!res.ok) {
                   throw new Error(`Token refresh failed: ${res.status}`);
                 }
@@ -1227,7 +1261,7 @@ export const useAuthStore = create<AuthState>()(
               }
 
               if (account.authMode === 'basic' && account.rememberMe) {
-                const res = await fetch(`/api/auth/session?slot=${account.cookieSlot}`, { method: 'PUT' });
+                const res = await apiFetch(`/api/auth/session?slot=${account.cookieSlot}`, { method: 'PUT' });
                 if (!res.ok) {
                   throw new Error(`Session cookie missing: ${res.status}`);
                 }
@@ -1259,7 +1293,7 @@ export const useAuthStore = create<AuthState>()(
               // again rather than seeing a stale error entry forever.
               evictAccount(account.id);
               accountStore.removeAccount(account.id);
-              fetch(`/api/auth/session?slot=${account.cookieSlot}`, { method: 'DELETE' }).catch(() => {});
+              apiFetch(`/api/auth/session?slot=${account.cookieSlot}`, { method: 'DELETE' }).catch(() => {});
             }
           };
 
@@ -1465,7 +1499,7 @@ export const useAuthStore = create<AuthState>()(
           if (state.authMode === 'basic') {
             set({ isLoading: true, isRateLimited: false, rateLimitUntil: null });
             try {
-              const res = await fetch('/api/auth/session', { method: 'PUT' });
+              const res = await apiFetch('/api/auth/session', { method: 'PUT' });
               if (res.ok) {
                 const data = await res.json();
                 if (!data.serverUrl || !data.username || !data.password) {
@@ -1573,14 +1607,30 @@ export const useAuthStore = create<AuthState>()(
         set({ identities, primaryIdentity });
       },
 
+      refreshIdentities: async () => {
+        const { client, username } = get();
+        if (!client || !username) return;
+        try {
+          const rawIdentities = await client.getIdentities();
+          const { identities, primaryIdentity } = loadIdentities(rawIdentities, username);
+          set({ identities, primaryIdentity });
+        } catch {
+          // Silently fail - background sync should not surface errors to the user
+        }
+      },
+
       getClientForAccount: (accountId: string) => {
         return clients.get(accountId);
+      },
+
+      getAllConnectedClients: () => {
+        return new Map(clients);
       },
     }),
     {
       name: 'auth-storage',
       partialize: (state) => {
-        // Don't persist unauthenticated state — prevents resurrecting stale sessions
+        // Don't persist unauthenticated state - prevents resurrecting stale sessions
         if (!state.isAuthenticated) return {};
         return {
           serverUrl: state.serverUrl,

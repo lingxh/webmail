@@ -1,5 +1,318 @@
 # Changelog
 
+## 1.6.1 (2026-05-04)
+
+### Features
+
+- **Updates**: Update-available detection with non-dismissible notice and dev-reload refresh
+- **Plugins**: New plugin hooks for compose, attachments, search, lifecycle, and routing
+- **Sharing**: Share indicators for calendars and contacts, updated JMAP capabilities (#244)
+- **Mail**: Auto-add recipients to trusted senders when replying
+- **Identity**: Sanitize identity display name to prevent invalid `From` headers
+
+### Fixes
+
+- **Mobile**: Synchronize mobile submenu view with browser history for better navigation
+- **Viewer**: Update email viewer styles to improve overflow handling
+- **Auth**: Ensure `cookieSlot` consistency during account updates in auth store
+- **Auth**: Thread per-account cookie slot through OAuth flows
+- **Calendar**: Square the colored left marker on calendar events
+- **About**: Show git commit in About instead of "unknown"
+
+### i18n
+
+- Update mailbox context menu translations across 12 locales
+
+## 1.6.0 (2026-05-01)
+
+### Features
+
+- **Deployment**: Subpath deployment support via `NEXT_PUBLIC_BASE_PATH` environment variable
+- **Mail**: Image attachment thumbnails and preview chips
+- **Mobile**: Reworked mobile mail viewer toolbar
+- **Mobile**: Mobile-friendly settings panel
+- **Mobile**: Mobile-friendly admin panel
+- **Mail**: Redesigned expanded details panel
+- **Mailbox**: Show full path in mailbox context menu header with intelligent path shortening
+
+### Fixes
+
+- **Viewer**: Respect per-email dark mode toggle when "always show in light mode" is on
+- **Navigation**: Scroll apps list in navigation rail to prevent overflow
+- **Context menu**: Clamp submenu inside viewport
+- **Context menu**: Prevent context menu from clipping below viewport
+- **Context menu**: Prevent jump and animation on open
+- **Mail**: Stop silently destroying emails when trash mailbox isn't found (#195)
+- **Mail**: Preserve list scroll position when tagging an email
+- **Mail**: Render below-header overflow popup outside clipped row
+- **Mail**: Collapse below-header attachments to single row with overflow pill
+- **Push**: Fix push preview JMAP query
+- **Tour**: Navigate tour to mailbox when starting from another page
+- **i18n**: Add `useTranslations` for "selected emails" and "cancel" on email list batch operations
+
+### i18n
+
+- Translate SPF/DKIM/DMARC tooltips
+- Add missing keys across 14 locales
+
+## 1.5.4 (2026-05-01)
+
+### Features
+
+- **PWA**: Web push notifications for new inbox mail (#233), with click-through to open the message
+- **Composer**: Insert and edit tables in rich-text emails (#236)
+- **Mail**: Configurable sub-addressing delimiter character (#239)
+- **i18n**: Turkish localization
+- **i18n**: Missing keys filled in across 15 locales
+
+### Fixes
+
+- **Mail**: Set In-Reply-To and References headers on replies (#234)
+- **Mail**: Persist htmlBody in drafts to preserve rich formatting (#236)
+- **Auth**: Pin JMAP auth verification to the configured server URL (#237)
+- **Auth**: Evict unrecoverable basic-auth accounts on reload
+- **Notifications**: Scope new-mail notifications to genuine inbox deliveries
+- **Notifications**: Extend PushVerification timeout and clean up leftover subscriptions
+- **Viewer**: Smooth out body load to prevent flicker on first render
+- **Viewer**: Prevent iframe flash when loading images or trusting the sender
+- **Viewer**: Pad bare HTML emails like plain-text mails for consistent layout
+- **Viewer**: Light-mode override now only affects body content
+- **Viewer**: Detect `<style>` tag when applying padding
+- **Viewer**: Drop iframe border-radius
+- **Calendar**: Localize event start date in detail popover and event modal
+- **Dev**: Include http protocol in connect-src for development mode CSP
+
+## 1.5.3 (2026-04-28)
+
+> **New:** Help shape Bulwark Webmail. Each instance now sends a lightweight daily heartbeat (version, platform, bucketed account counts, feature toggles - never message data or PII) so we can see which platforms and features actually get used and prioritize fixes where they matter most. You're in control: opt out any time from **Admin → Telemetry** or by setting `BULWARK_TELEMETRY=off`. Full schema in the [privacy notice](https://bulwarkmail.org/docs/legal/privacy/telemetry).
+
+### Features
+
+- **Telemetry**: Anonymous instance telemetry, on by default. Reports schema version, platform, bucketed account counts, and feature toggles only - disable from the admin UI, with `BULWARK_TELEMETRY=off`, or by clearing the endpoint
+- **Telemetry**: Track unique logins (HMAC'd per instance, 90-day retention) so the heartbeat can report bucketed account totals without storing usernames
+- **Plugins**: Theme API v2 with token compiler and skin slot
+- **Plugins**: Extension preview page and detailed extension info API
+- **Calendar**: Right-click context menu on empty calendar space
+- **Docker**: Persistent named volume for telemetry data so the instance id and admin's consent choice survive container upgrades
+
+### Fixes
+
+- **Security**: Block telemetry endpoint from pointing at internal/loopback hosts (validation + DNS-rebind re-check at fetch time)
+- **Security**: Harden plugin config, TOTP token exchange, and branding file serving
+- **Mail**: Batch shortcuts now act on the multi-selection when one is present (#228)
+
+## 1.5.2 (2026-04-27)
+
+### Features
+
+- **Plugins**: New `composer-sidebar` slot and `ui:composer-sidebar` permission - plugins can now render a panel on either side of the New Message dialog. See `repos/subway-surfers` for an example
+- **Plugins**: Manifests can declare `frameOrigins` - a strictly-validated list of `https://host` origins the plugin needs to embed. The proxy reads the union from enabled plugins and merges it into the host CSP `frame-src`, so the host CSP no longer needs to know about specific embed providers
+- **Calendar/Contacts**: JMAP sharing for calendars and address books
+- **i18n**: Czech language support
+
+### Fixes
+
+- **Security**: Validate URLs before outbound fetch
+- **Calendar**: Prevent drag creation on touch events in the time grid
+- **Contacts**: Emit RFC 9553 name kinds and decode QUOTED-PRINTABLE in vCard import (#224, #187)
+- **Mail**: Hide preview line in compact density to match settings preview (#223)
+- **Proxy**: Inline matcher for Next.js proxy and drop unnecessary Node.js runtime config
+- **i18n**: Portuguese fixes for "ficheiro" and "contactos" variants
+
+## 1.5.1 (2026-04-25)
+
+### Features
+
+- **Stalwart**: OAuth auto-setup with dialog and validation for origin and issuer URLs
+- **Mail**: Right-click context menu on the folders sidebar
+- **Mail**: Replace folder `prompt()` calls with a proper modal dialog
+- **Calendar**: Add 'Today' button to the desktop calendar toolbar
+- **Junk**: Setting to show avatars in the Junk folder (off by default)
+
+### Fixes
+
+- **Admin**: Restore admin panel after Stalwart v0.16 REST API removal
+- **Viewer**: Restore broken viewer toolbar actions and improve the mobile menu (#220)
+- **Folders**: Stop flicker on background folder refresh
+- **Email**: Preserve search/filter on batch move and archive
+- **Email**: Preserve search/filter when moving emails via drag-drop
+- **i18n**: Improve Korean flag
+
+## 1.5.0 (2026-04-22)
+
+### Breaking Changes
+
+- **Self-service portal now needs Stalwart 0.16+**: Stalwart dropped its self-service HTTP API in 0.16.0 and replaced it with JMAP. Bulwark Webmail only talks to the new JMAP endpoint, so the self-service portal (account settings, app passwords, API keys) requires Stalwart 0.16 or newer. `STALWART_API_URL` is deprecated, these actions go through the normal JMAP session.
+
+### Features
+
+- **Stalwart**: Migrate Stalwart management API to JMAP `x:` methods for Stalwart 0.16
+- **Admin**: Add API Keys management and IP allowlist for App Passwords
+- **Contacts**: Revamp contact detail view with filters, photo, print, and duplicate actions
+- **Contacts**: Add contact activity component showing recent emails and upcoming events
+- **Contacts**: Add right-click context menu
+- **Contacts**: Group contacts by first letter with sticky section headers, toggleable in settings
+- **Calendar**: Support resizing events from the top edge
+- **Calendar**: Add timezone-aware formatting for event start times and update `utcEnd` on duration change
+- **Calendar**: Optimize layout of overlapping events
+- **Calendar**: Add collapsible details to calendar invitation banner
+- **Email**: Implement batch archiving and bulk moving of emails
+- **Email**: Show full folder path in move/drop toast
+- **Settings**: Reorganize settings into 6 groups with clearer tabs
+- **Navigation**: Add account-addition button to the navigation rail
+- **Mobile**: Streamline email viewer header layout
+- **Mobile**: Pass `isMobile` through calendar views and time-grid interactions
+
+### Fixes
+
+- **Mailbox**: Retry mailbox fetch on first login to handle lazy provisioning (#217)
+- **Mailbox**: Use fresh state in archive handling to avoid stale mailbox data
+- **Mailbox**: Improve error message on mailbox creation failure
+- **Auth**: Skip `checkAuth` on route change when already authenticated
+- **Auth**: Clean up unused imports and improve TOTP QR code rendering
+- **UI**: Align hover styles and selection-toggle target with focused item
+- **UI**: Read `matchMedia` synchronously on client to prevent layout flicker
+
+### Refactor
+
+- **Settings**: Remove Stalwart API URL configuration (now derived via JMAP)
+
+### Chore
+
+- **i18n**: Add missing translation keys
+- **Deps**: Bump dependencies to latest compatible versions
+
+## 1.4.14 (2026-04-16)
+
+Thank you for your donations:
+
+- _You? [Become a sponsor!](https://github.com/sponsors/bulwarkmail)_
+
+**One-time**
+
+- [@mkorthaus-private](https://github.com/mkorthaus-private)
+- [@boris22100](https://github.com/boris22100)
+
+**Monthly**
+
+- [@pr0ton11](https://github.com/pr0ton11)
+
+### Features
+
+- **Email**: Add unified mailbox across accounts and sidebar icons toggle
+- **Email**: Enhance email deletion and spam handling with improved parameterization
+- **Sieve**: Enhance external rule handling in parser and store (#201)
+- **Plugins**: Add i18n API, render hooks, and new intercept hooks to plugin system
+- **PWA**: Dynamic PWA manifest with configurable name, description, and icons
+- **PWA**: Show app name and logo in install prompt
+- **i18n**: Add Ukrainian language with flags and missing translation keys
+- **i18n**: Configurable locale prefix via `NEXT_PUBLIC_LOCALE_PREFIX`
+- **API**: Add `apiFetch` helper for mount-prefix-aware API calls
+
+### Fixes
+
+- **Calendar**: Send iMIP invitation emails when creating or updating calendar events (#192)
+- **Calendar**: RFC 5545/6047 compliance for outgoing iMIP calendar emails
+- **Calendar**: Add `calendarAddress` and `replyTo` to participants for Stalwart compatibility (#189, #192)
+- **Calendar**: Improve CalDAV task detection for external clients like Thunderbird (#84)
+- **Email**: Hide ICS attachments from attachment list when invitation banner is shown
+- **Email**: Send before storing in Sent via `onSuccessUpdateEmail` (#188)
+- **Email**: Standardize tag naming and fix unknown keyword display (#184, #185)
+- **i18n**: Skip intl middleware for paths already containing a locale prefix
+- **Docs**: Document PWA and branding env vars in `.env.example`
+- **Docs**: Use `company` consistently in `.env.example` branding comments
+
+## 1.4.13 (2026-04-12)
+
+Thank you for your donations:
+
+**One-time**
+
+- [@boris22100](https://github.com/boris22100)
+- [@mkorthaus-private](https://github.com/mkorthaus-private)
+
+**Monthly**
+
+- _You? [Become a sponsor!](https://github.com/sponsors/bulwarkmail)_
+
+### Features
+
+- **Contacts**: Store trusted senders in a dedicated JMAP address book (#176)
+- **Email**: Warn on send when attachment keyword found but no file attached (#172)
+- **Email**: Enable keyword reordering (#174) and multi-tag support per email (#173)
+- **PWA**: Add "don't remind me again" option to install prompt
+- **Auth**: Add `SESSION_SECRET_FILE` and `OAUTH_CLIENT_SECRET_FILE` environment variable support
+- **Plugins**: Add `onAvatarResolve` plugin hook
+- **Docker**: Publish main and dev branches as separate GHCR packages
+
+### Fixes
+
+- **Email**: Style links in plain text emails
+- **Email**: Seed list history entry when app initializes on an email view
+- **Email**: Remount composer on draft edit and preserve identity (#60)
+- **Contacts**: Display contact names stored in `name.full` (#179)
+- **Contacts**: Fix category dropdown blocking Save button in contact form (#177)
+- **Contacts**: Resolve TS error from optional `name.components` in vCard parser
+- **Search**: Search all folders when filtering emails by tag (#175)
+- **Auth**: Include mount prefix in SSO redirect URI when app is served under a subpath
+- **PWA**: Correct PWA icons with proper sizing, transparency, and dark/light mode support
+
+## 1.4.12 (2026-04-09)
+
+Thank you for your donations:
+
+**One-time**
+
+- [@mkorthaus-private](https://github.com/mkorthaus-private)
+
+**Monthly**
+
+- _You? [Become a sponsor!](https://github.com/sponsors/bulwarkmail)_
+
+### Features
+
+- **PWA**: Add PWA support with service worker and install prompt
+- **Calendar**: Add birthday calendar feature with settings and localization
+- **Calendar**: Clamp February 29 birthdays in non-leap years
+- **Identity**: Add automatic identity synchronization (#167)
+- **Plugins**: Disable plugins by default and require admin approval
+- **Plugins**: Replace auth header exposure with a secure HTTP proxy API for plugins
+- **Auth**: Add configurable OAuth scopes and cookie security via environment variables
+- **Email**: Sync mail view to browser history for back/forward navigation
+- **Contacts**: Add ability to rename address books (#152)
+- **UI**: Add version badge in settings
+- **i18n**: Add Latvian (lv) locale support
+- **i18n**: Add Polish language support
+- **i18n**: Add Korean language support
+- **i18n**: Add Simplified Chinese (zh_CN) locale support
+
+### Fixes
+
+- **Email**: Show recipient instead of sender in Sent and Drafts folder lists
+- **Email**: Embed dropped images as data URLs and prevent duplicate attachments (#163)
+- **Email**: Fix logic for marking email as read in EmailViewer
+- **Email**: Fix archive action passing MouseEvent as argument
+- **Mailbox**: Preserve search filters on push-triggered mailbox refresh (#164)
+- **Mailbox**: Align shared account folders with primary folders (#151)
+- **Mailbox**: Fetch mailboxes on mount in FolderSettings when store is empty
+- **Mailbox**: Improve mailbox deletion error handling
+- **Calendar**: Improve calendar event retrieval by batching requests to avoid server limits (#141)
+- **Calendar**: Compute per-occurrence UTC start/end in recurrence expansion (#116)
+- **Calendar**: Guard against undefined trigger in calendar event alert popover (#143)
+- **Files**: Stream WebDAV PUT uploads to avoid buffering in memory (#162)
+- **Files**: Prune recent files against server nodes on refresh (#146)
+- **Files**: Fix file deletion logic to update recent files and handle errors (#146)
+- **Files**: Extend file drop zone to fill remaining viewport height
+- **Files**: Fallback to application/octet-stream for long MIME types
+- **Security**: Replace unguarded crypto.randomUUID() with safe generateUUID() utility
+- **Security**: Validate plugin HTTP post URL against origin with regression tests
+- **Security**: Allow blob images in CSP for inline drag-and-drop (#163)
+- **Auth**: Resolve settings sync identity mismatch for OAuth/SSO sessions (#127)
+- **Contacts**: Fix address book ID namespacing for shared contacts in create and update operations (#133)
+- **UI**: Fix focused mode expanding beyond screen bounds (#156)
+- **API**: Handle 403 on principal fetch without console error
+- **API**: Enhance error handling in Stalwart API responses
+
 ## 1.4.11 (2026-03-31)
 
 ### Features
@@ -349,7 +662,7 @@
 ### Fixes
 
 - **Context menu**: Fix "Move to folder" submenu closing when scrolling the folder list or moving the mouse to the submenu (#19)
-- **Move to folder**: Fix emails not actually moving on the server — JMAP response errors were silently ignored and shared account IDs were not resolved correctly
+- **Move to folder**: Fix emails not actually moving on the server - JMAP response errors were silently ignored and shared account IDs were not resolved correctly
 - **Dependencies**: Update tailwindcss, lucide-react, @tanstack/react-virtual, @typescript-eslint/\*, globals, @types/node
 
 ## 1.1.1 (2026-02-28)
@@ -359,7 +672,7 @@
 - **Email viewer**: Show/hide details toggle now stays in place when expanded instead of jumping to the bottom of the details section (#18)
 - **Email viewer**: Details toggle text is now properly translated (was hardcoded in English)
 - **Instrumentation**: Resolve Edge Runtime warnings by splitting Node.js-only code into a separate module
-- **Security**: Patch minimatch ReDoS vulnerability (CVE-2026-27903) — upgrade 9.0.6→9.0.9 and 3.1.3→3.1.5
+- **Security**: Patch minimatch ReDoS vulnerability (CVE-2026-27903) - upgrade 9.0.6→9.0.9 and 3.1.3→3.1.5
 
 ## 1.1.0 (2026-02-28)
 

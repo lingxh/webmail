@@ -9,7 +9,6 @@ import {
   LogOut,
   Settings as SettingsIcon,
   Palette,
-  Mail,
   User,
   Shield,
   UserPen,
@@ -20,25 +19,37 @@ import {
   FolderOpen,
   Tags,
   HardDrive,
-  Wrench,
   BookUser,
   KeyRound,
   PanelLeftClose,
   Bell,
   Puzzle,
+  LayoutGrid,
+  BookOpen,
+  PenLine,
+  EyeOff,
+  Languages,
+  Info,
+  Bug,
   type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AppearanceSettings } from '@/components/settings/appearance-settings';
-import { EmailSettings } from '@/components/settings/email-settings';
+import { LayoutSettings } from '@/components/settings/layout-settings';
+import { LanguageSettings } from '@/components/settings/language-settings';
+import { ReadingSettings } from '@/components/settings/reading-settings';
+import { ComposingSettings } from '@/components/settings/composing-settings';
+import { ContentSendersSettings } from '@/components/settings/content-senders-settings';
 import { AccountSettings } from '@/components/settings/account-settings';
 import { IdentitySettings } from '@/components/settings/identity-settings';
 import { VacationSettings } from '@/components/settings/vacation-settings';
 import { CalendarSettings } from '@/components/settings/calendar-settings';
 import { CalendarManagementSettings } from '@/components/settings/calendar-management-settings';
+import { AddressBookManagementSettings } from '@/components/settings/address-book-management-settings';
 import { FilterSettings } from '@/components/settings/filter-settings';
 import { TemplateSettings } from '@/components/settings/template-settings';
-import { AdvancedSettings } from '@/components/settings/advanced-settings';
+import { AboutDataSettings } from '@/components/settings/about-data-settings';
+import { DebugSettings } from '@/components/settings/debug-settings';
 import { FolderSettings } from '@/components/settings/folder-settings';
 import { KeywordSettings } from '@/components/settings/keyword-settings';
 import { AccountSecuritySettings } from '@/components/settings/account-security-settings';
@@ -61,8 +72,33 @@ import { useConfig } from '@/hooks/use-config';
 import { usePolicyStore } from '@/stores/policy-store';
 import { cn } from '@/lib/utils';
 
-type Tab = 'appearance' | 'email' | 'notifications' | 'account' | 'security' | 'identities' | 'encryption' | 'vacation' | 'calendar' | 'contacts' | 'filters' | 'templates' | 'folders' | 'keywords' | 'files' | 'sidebar_apps' | 'themes' | 'plugins' | 'advanced';
-type TabGroup = 'general' | 'account' | 'organization' | 'apps' | 'system';
+type Tab =
+  | 'account'
+  | 'language'
+  | 'notifications'
+  | 'appearance'
+  | 'layout'
+  | 'reading'
+  | 'composing'
+  | 'identities'
+  | 'vacation'
+  | 'filters'
+  | 'templates'
+  | 'folders'
+  | 'keywords'
+  | 'security'
+  | 'encryption'
+  | 'content_senders'
+  | 'calendar'
+  | 'contacts'
+  | 'files'
+  | 'sidebar_apps'
+  | 'about_data'
+  | 'themes'
+  | 'plugins'
+  | 'debug';
+
+type TabGroup = 'general' | 'appearance' | 'mail' | 'privacy' | 'apps' | 'advanced';
 
 interface TabDef {
   id: Tab;
@@ -73,28 +109,54 @@ interface TabDef {
 }
 
 const tabIcons: Record<Tab, LucideIcon> = {
-  appearance: Palette,
-  email: Mail,
-  notifications: Bell,
   account: User,
-  security: Shield,
+  language: Languages,
+  notifications: Bell,
+  appearance: Palette,
+  layout: LayoutGrid,
+  reading: BookOpen,
+  composing: PenLine,
   identities: UserPen,
-  encryption: KeyRound,
   vacation: PalmtreeIcon,
-  calendar: Calendar,
-  contacts: BookUser,
   filters: Filter,
   templates: FileText,
   folders: FolderOpen,
   keywords: Tags,
+  security: Shield,
+  encryption: KeyRound,
+  content_senders: EyeOff,
+  calendar: Calendar,
+  contacts: BookUser,
   files: HardDrive,
   sidebar_apps: PanelLeftClose,
+  about_data: Info,
   themes: Palette,
   plugins: Puzzle,
-  advanced: Wrench,
+  debug: Bug,
 };
 
-const tabGroupOrder: TabGroup[] = ['general', 'account', 'organization', 'apps', 'system'];
+const tabGroupOrder: TabGroup[] = ['general', 'appearance', 'mail', 'privacy', 'apps', 'advanced'];
+
+// Map legacy tab IDs to current ones; runs once on read of localStorage.
+const LEGACY_TAB_MAP: Record<string, Tab> = {
+  email: 'reading',
+  advanced: 'about_data',
+};
+
+function readPersistedTab(): Tab {
+  try {
+    const saved = localStorage.getItem('settings-active-tab');
+    if (!saved) return 'appearance';
+    if (saved in LEGACY_TAB_MAP) {
+      const migrated = LEGACY_TAB_MAP[saved];
+      try { localStorage.setItem('settings-active-tab', migrated); } catch { /* ignore */ }
+      return migrated;
+    }
+    return saved as Tab;
+  } catch {
+    return 'appearance';
+  }
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -106,13 +168,7 @@ export default function SettingsPage() {
   const { quota, isPushConnected } = useEmailStore();
   const { stalwartFeaturesEnabled } = useConfig();
   const { isFeatureEnabled } = usePolicyStore();
-  const [activeTab, setActiveTab] = useState<Tab>(() => {
-    try {
-      const saved = localStorage.getItem('settings-active-tab');
-      if (saved) return saved as Tab;
-    } catch { /* ignore */ }
-    return 'appearance';
-  });
+  const [activeTab, setActiveTab] = useState<Tab>(readPersistedTab);
   const [mobileShowContent, setMobileShowContent] = useState(false);
   const isDesktop = useIsDesktop();
 
@@ -123,27 +179,28 @@ export default function SettingsPage() {
   const [isResizing, setIsResizing] = useState(false);
   const dragStartWidth = useRef(256);
 
-  // Check auth on mount
+  // Check auth on mount – skip when already authenticated so that navigating
+  // between routes doesn't retrigger checkAuth's transient `{ client: null,
+  // isLoading: true }` reset, which was flashing the spinner on every nav.
   useEffect(() => {
-    const { isAuthenticated: hydratedAuthenticated, client: hydratedClient } = useAuthStore.getState();
-    if (hydratedAuthenticated && hydratedClient) {
+    const state = useAuthStore.getState();
+    if (state.isAuthenticated && state.client) {
       setInitialCheckDone(true);
       return;
     }
-
     checkAuth().finally(() => {
       setInitialCheckDone(true);
     });
   }, [checkAuth]);
 
-  // Listen for tab change events from child components
+  // Listen for tab change events from child components (with legacy migration)
   useEffect(() => {
     const handler = (e: Event) => {
-      const tab = (e as CustomEvent).detail as Tab;
-      if (tab) {
-        setActiveTab(tab);
-        try { localStorage.setItem('settings-active-tab', tab); } catch { /* ignore */ }
-      }
+      const raw = (e as CustomEvent).detail as string;
+      if (!raw) return;
+      const tab = (LEGACY_TAB_MAP[raw] ?? raw) as Tab;
+      setActiveTab(tab);
+      try { localStorage.setItem('settings-active-tab', tab); } catch { /* ignore */ }
     };
     window.addEventListener('settings-tab-change', handler);
     return () => window.removeEventListener('settings-tab-change', handler);
@@ -156,6 +213,22 @@ export default function SettingsPage() {
     }
   }, [initialCheckDone, isAuthenticated, authLoading]);
 
+  // Sync the mobile submenu view with browser history so the system back
+  // button (or gesture) returns to the settings list before exiting /settings.
+  useEffect(() => {
+    if (isDesktop) return;
+    if (typeof window === 'undefined') return;
+    if (!mobileShowContent) return;
+
+    window.history.pushState({ __settingsSubmenu: true }, '');
+
+    const handlePop = () => {
+      setMobileShowContent(false);
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, [isDesktop, mobileShowContent]);
+
   if (!isAuthenticated) {
     return null;
   }
@@ -166,25 +239,41 @@ export default function SettingsPage() {
   const supportsFiles = client?.supportsFiles() ?? false;
 
   const tabs: TabDef[] = [
-    { id: 'appearance', label: t('tabs.appearance'), icon: tabIcons.appearance, group: 'general' },
-    { id: 'email', label: t('tabs.email'), icon: tabIcons.email, group: 'general' },
+    // General
+    { id: 'account', label: t('tabs.account'), icon: tabIcons.account, group: 'general' },
+    { id: 'language', label: t('tabs.language'), icon: tabIcons.language, group: 'general' },
     { id: 'notifications', label: t('tabs.notifications'), icon: tabIcons.notifications, group: 'general' },
-    { id: 'account', label: t('tabs.account'), icon: tabIcons.account, group: 'account' },
-    ...(stalwartFeaturesEnabled ? [{ id: 'security' as Tab, label: t('tabs.security'), icon: tabIcons.security, group: 'account' as TabGroup }] : []),
-    { id: 'identities', label: t('tabs.identities'), icon: tabIcons.identities, group: 'account' },
-    ...(isFeatureEnabled('smimeEnabled') ? [{ id: 'encryption' as Tab, label: t('tabs.encryption'), icon: tabIcons.encryption, group: 'account' as TabGroup }] : []),
-    ...(supportsVacation ? [{ id: 'vacation' as Tab, label: t('tabs.vacation'), icon: tabIcons.vacation, group: 'account' as TabGroup }] : []),
-    ...(supportsSieve ? [{ id: 'filters' as Tab, label: t('tabs.filters'), icon: tabIcons.filters, group: 'organization' as TabGroup }] : []),
-    ...(isFeatureEnabled('templatesEnabled') ? [{ id: 'templates' as Tab, label: t('tabs.templates'), icon: tabIcons.templates, group: 'organization' as TabGroup }] : []),
-    { id: 'folders', label: t('tabs.folders'), icon: tabIcons.folders, group: 'organization' },
-    ...(isFeatureEnabled('customKeywordsEnabled') ? [{ id: 'keywords' as Tab, label: t('tabs.keywords'), icon: tabIcons.keywords, group: 'organization' as TabGroup }] : []),
+
+    // Appearance
+    { id: 'appearance', label: t('tabs.appearance'), icon: tabIcons.appearance, group: 'appearance' },
+    { id: 'layout', label: t('tabs.layout'), icon: tabIcons.layout, group: 'appearance' },
+
+    // Mail
+    { id: 'reading', label: t('tabs.reading'), icon: tabIcons.reading, group: 'mail' },
+    { id: 'composing', label: t('tabs.composing'), icon: tabIcons.composing, group: 'mail' },
+    { id: 'identities', label: t('tabs.identities'), icon: tabIcons.identities, group: 'mail' },
+    ...(supportsVacation ? [{ id: 'vacation' as Tab, label: t('tabs.vacation'), icon: tabIcons.vacation, group: 'mail' as TabGroup }] : []),
+    ...(supportsSieve ? [{ id: 'filters' as Tab, label: t('tabs.filters'), icon: tabIcons.filters, group: 'mail' as TabGroup }] : []),
+    ...(isFeatureEnabled('templatesEnabled') ? [{ id: 'templates' as Tab, label: t('tabs.templates'), icon: tabIcons.templates, group: 'mail' as TabGroup }] : []),
+    { id: 'folders', label: t('tabs.folders'), icon: tabIcons.folders, group: 'mail' },
+    ...(isFeatureEnabled('customKeywordsEnabled') ? [{ id: 'keywords' as Tab, label: t('tabs.keywords'), icon: tabIcons.keywords, group: 'mail' as TabGroup }] : []),
+
+    // Privacy & Security
+    ...(stalwartFeaturesEnabled ? [{ id: 'security' as Tab, label: t('tabs.security'), icon: tabIcons.security, group: 'privacy' as TabGroup }] : []),
+    ...(isFeatureEnabled('smimeEnabled') ? [{ id: 'encryption' as Tab, label: t('tabs.encryption'), icon: tabIcons.encryption, group: 'privacy' as TabGroup }] : []),
+    { id: 'content_senders', label: t('tabs.content_senders'), icon: tabIcons.content_senders, group: 'privacy' },
+
+    // Apps
     ...(supportsCalendar ? [{ id: 'calendar' as Tab, label: t('tabs.calendar'), icon: tabIcons.calendar, group: 'apps' as TabGroup }] : []),
     { id: 'contacts', label: t('tabs.contacts'), icon: tabIcons.contacts, group: 'apps' },
     ...(supportsFiles ? [{ id: 'files' as Tab, label: t('tabs.files'), icon: tabIcons.files, group: 'apps' as TabGroup }] : []),
     ...(isFeatureEnabled('sidebarAppsEnabled') ? [{ id: 'sidebar_apps' as Tab, label: t('tabs.sidebar_apps'), icon: tabIcons.sidebar_apps, group: 'apps' as TabGroup }] : []),
-    ...(isFeatureEnabled('themesEnabled') ? [{ id: 'themes' as Tab, label: 'Themes', icon: tabIcons.themes, group: 'system' as TabGroup, experimental: true }] : []),
-    ...(isFeatureEnabled('pluginsEnabled') ? [{ id: 'plugins' as Tab, label: 'Plugins', icon: tabIcons.plugins, group: 'system' as TabGroup, experimental: true }] : []),
-    { id: 'advanced', label: t('tabs.advanced'), icon: tabIcons.advanced, group: 'system' },
+
+    // Advanced
+    { id: 'about_data', label: t('tabs.about_data'), icon: tabIcons.about_data, group: 'advanced' },
+    ...(isFeatureEnabled('themesEnabled') ? [{ id: 'themes' as Tab, label: 'Themes', icon: tabIcons.themes, group: 'advanced' as TabGroup, experimental: true }] : []),
+    ...(isFeatureEnabled('pluginsEnabled') ? [{ id: 'plugins' as Tab, label: 'Plugins', icon: tabIcons.plugins, group: 'advanced' as TabGroup, experimental: true }] : []),
+    ...(isFeatureEnabled('debugModeEnabled') ? [{ id: 'debug' as Tab, label: t('tabs.debug'), icon: tabIcons.debug, group: 'advanced' as TabGroup }] : []),
   ];
 
   // Group tabs by category
@@ -196,6 +285,10 @@ export default function SettingsPage() {
     }))
     .filter((g) => g.items.length > 0);
 
+  // If active tab is not in the visible list (e.g., feature disabled), fall back.
+  const isActiveVisible = tabs.some((tab) => tab.id === activeTab);
+  const effectiveActiveTab: Tab = isActiveVisible ? activeTab : 'appearance';
+
   const handleTabSelect = (tabId: Tab) => {
     setActiveTab(tabId);
     try { localStorage.setItem('settings-active-tab', tabId); } catch { /* ignore */ }
@@ -204,44 +297,47 @@ export default function SettingsPage() {
     }
   };
 
-  const activeTabLabel = tabs.find((tab) => tab.id === activeTab)?.label ?? '';
+  const activeTabLabel = tabs.find((tab) => tab.id === effectiveActiveTab)?.label ?? '';
 
   const renderTabContent = () => (
     <>
-      {activeTab === 'appearance' && <AppearanceSettings />}
-      {activeTab === 'email' && <EmailSettings />}
-      {activeTab === 'notifications' && <NotificationSettings />}
-      {activeTab === 'account' && <AccountSettings />}
-      {activeTab === 'security' && <AccountSecuritySettings />}
-      {activeTab === 'identities' && <IdentitySettings />}
-      {activeTab === 'encryption' && <SmimeSettings />}
-      {activeTab === 'vacation' && <VacationSettings />}
-      {activeTab === 'calendar' && <><CalendarSettings /><div className="mt-8"><CalendarManagementSettings /></div></>}
-      {activeTab === 'contacts' && <ContactsSettings />}
-      {activeTab === 'filters' && <FilterSettings />}
-      {activeTab === 'templates' && <TemplateSettings />}
-      {activeTab === 'folders' && <FolderSettings />}
-      {activeTab === 'keywords' && <KeywordSettings />}
-      {activeTab === 'files' && <FilesSettingsComponent />}
-      {activeTab === 'sidebar_apps' && <SidebarAppsSettings />}
-      {activeTab === 'themes' && <ThemesSettings />}
-      {activeTab === 'plugins' && <PluginsSettings />}
-      {activeTab === 'advanced' && <AdvancedSettings />}
+      {effectiveActiveTab === 'account' && <AccountSettings />}
+      {effectiveActiveTab === 'language' && <LanguageSettings />}
+      {effectiveActiveTab === 'notifications' && <NotificationSettings />}
+      {effectiveActiveTab === 'appearance' && <AppearanceSettings />}
+      {effectiveActiveTab === 'layout' && <LayoutSettings />}
+      {effectiveActiveTab === 'reading' && <ReadingSettings />}
+      {effectiveActiveTab === 'composing' && <ComposingSettings />}
+      {effectiveActiveTab === 'identities' && <IdentitySettings />}
+      {effectiveActiveTab === 'vacation' && <VacationSettings />}
+      {effectiveActiveTab === 'filters' && <FilterSettings />}
+      {effectiveActiveTab === 'templates' && <TemplateSettings />}
+      {effectiveActiveTab === 'folders' && <FolderSettings />}
+      {effectiveActiveTab === 'keywords' && <KeywordSettings />}
+      {effectiveActiveTab === 'security' && <AccountSecuritySettings />}
+      {effectiveActiveTab === 'encryption' && <SmimeSettings />}
+      {effectiveActiveTab === 'content_senders' && <ContentSendersSettings />}
+      {effectiveActiveTab === 'calendar' && <><CalendarSettings /><div className="mt-8"><CalendarManagementSettings /></div></>}
+      {effectiveActiveTab === 'contacts' && <><ContactsSettings /><div className="mt-8"><AddressBookManagementSettings /></div></>}
+      {effectiveActiveTab === 'files' && <FilesSettingsComponent />}
+      {effectiveActiveTab === 'sidebar_apps' && <SidebarAppsSettings />}
+      {effectiveActiveTab === 'about_data' && <AboutDataSettings />}
+      {effectiveActiveTab === 'themes' && <ThemesSettings />}
+      {effectiveActiveTab === 'plugins' && <PluginsSettings />}
+      {effectiveActiveTab === 'debug' && <DebugSettings />}
     </>
   );
 
   // Mobile layout
   if (!isDesktop) {
-    // Mobile: show content view
-      if (mobileShowContent) {
-        return (
-          <div className="flex flex-col h-dvh bg-background">
-            {/* Mobile content header */}
+    if (mobileShowContent) {
+      return (
+        <div className="flex flex-col h-dvh bg-background">
           <div className="flex items-center gap-2 px-4 h-14 border-b border-border bg-background shrink-0">
             <Button
               variant="ghost"
               size="icon"
-              onClick={() => setMobileShowContent(false)}
+              onClick={() => window.history.back()}
               className="h-10 w-10"
             >
               <ArrowLeft className="w-5 h-5" />
@@ -249,14 +345,10 @@ export default function SettingsPage() {
             <h1 className="font-semibold text-lg truncate">{activeTabLabel}</h1>
           </div>
 
-          {/* Content */}
           <div className="flex-1 overflow-y-auto p-4">
-            <div className="bg-card border border-border rounded-lg p-4">
-              {renderTabContent()}
-            </div>
+            {renderTabContent()}
           </div>
 
-          {/* Bottom Navigation */}
           <NavigationRail
             orientation="horizontal"
             onManageApps={handleManageApps}
@@ -269,10 +361,8 @@ export default function SettingsPage() {
       );
     }
 
-    // Mobile: show tab list
     return (
       <div className="flex flex-col h-dvh bg-background">
-        {/* Mobile header */}
         <div className="flex items-center gap-2 px-4 h-14 border-b border-border bg-background shrink-0">
           <Button
             variant="ghost"
@@ -288,7 +378,6 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Tab list */}
         <div className="flex-1 overflow-y-auto">
           <div className="py-2">
             {groupedTabs.map((group, groupIndex) => (
@@ -324,7 +413,6 @@ export default function SettingsPage() {
             ))}
           </div>
 
-          {/* Logout */}
           <div className="border-t border-border px-5 py-3">
             <button
               onClick={logout}
@@ -336,7 +424,6 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Bottom Navigation */}
         <NavigationRail
           orientation="horizontal"
           onManageApps={handleManageApps}
@@ -352,7 +439,6 @@ export default function SettingsPage() {
   // Desktop layout
   return (
     <div className="flex h-dvh bg-background">
-      {/* Navigation Rail */}
       <div className="w-14 bg-secondary flex flex-col flex-shrink-0" style={{ borderRight: '1px solid rgba(128, 128, 128, 0.3)' }}>
         <NavigationRail
           collapsed
@@ -371,7 +457,6 @@ export default function SettingsPage() {
       )}
       {!inlineApp && (
       <>
-      {/* Settings Sidebar */}
       <div
         className={cn(
           "border-r border-border bg-secondary flex flex-col",
@@ -379,7 +464,6 @@ export default function SettingsPage() {
         )}
         style={{ width: `${settingsSidebarWidth}px` }}
       >
-        {/* Header */}
         <div className="p-4 border-b border-border">
           <Button
             variant="ghost"
@@ -392,7 +476,6 @@ export default function SettingsPage() {
           </Button>
         </div>
 
-        {/* Tabs */}
         <div className="flex-1 overflow-y-auto py-2" data-tour="settings-tabs">
           <div className="px-2 space-y-0.5">
             {groupedTabs.map((group, groupIndex) => (
@@ -411,14 +494,14 @@ export default function SettingsPage() {
                       onClick={() => setActiveTab(tab.id)}
                       className={cn(
                         'w-full text-left px-3 py-2 rounded-md text-sm transition-colors duration-150 flex items-center gap-2.5',
-                        activeTab === tab.id
+                        effectiveActiveTab === tab.id
                           ? 'bg-accent text-accent-foreground font-medium'
                           : 'hover:bg-muted text-foreground'
                       )}
                     >
                       <Icon className={cn(
                         'w-4 h-4 shrink-0',
-                        activeTab === tab.id ? 'text-accent-foreground' : 'text-muted-foreground'
+                        effectiveActiveTab === tab.id ? 'text-accent-foreground' : 'text-muted-foreground'
                       )} />
                       {tab.label}
                       {tab.experimental && (
@@ -435,7 +518,6 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Sidebar resize handle */}
       <ResizeHandle
         onResizeStart={() => { dragStartWidth.current = settingsSidebarWidth; setIsResizing(true); }}
         onResize={(delta) => setSettingsSidebarWidth(Math.max(180, Math.min(400, dragStartWidth.current + delta)))}
@@ -446,21 +528,9 @@ export default function SettingsPage() {
         onDoubleClick={() => { setSettingsSidebarWidth(256); localStorage.setItem('settings-sidebar-width', '256'); }}
       />
 
-      {/* Settings Content */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto p-8">
-          {/* Page Header */}
-          <div className="mb-6">
-            <div className="flex items-center gap-2.5 mb-2">
-              <SettingsIcon className="w-6 h-6 text-muted-foreground" />
-              <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-            </div>
-          </div>
-
-          {/* Active Tab Content */}
-          <div className="bg-card border border-border rounded-lg p-6">
-            {renderTabContent()}
-          </div>
+        <div className="max-w-3xl mx-auto px-6 py-6">
+          {renderTabContent()}
         </div>
       </div>
       </>
