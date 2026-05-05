@@ -20,7 +20,6 @@ import {
   Calendar,
   BookUser,
   HardDrive,
-  ArrowLeft,
   Store,
   Menu,
   X,
@@ -29,7 +28,6 @@ import { cn } from '@/lib/utils';
 import { useConfig } from '@/hooks/use-config';
 import { useThemeStore } from '@/stores/theme-store';
 import { getActiveAccountSlotHeaders } from '@/lib/auth/active-account-slot';
-import { replaceWindowLocation } from '@/lib/browser-navigation';
 import { useUpdateStore, selectHasUpdate } from '@/stores/update-store';
 import { apiFetch, replaceWindowLocation } from '@/lib/browser-navigation';
 

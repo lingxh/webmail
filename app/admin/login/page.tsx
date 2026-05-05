@@ -4,7 +4,6 @@ import { useState, type FormEvent } from 'react';
 import { Shield } from 'lucide-react';
 import { useConfig } from '@/hooks/use-config';
 import { useThemeStore } from '@/stores/theme-store';
-import { replaceWindowLocation } from '@/lib/browser-navigation';
 import { apiFetch, replaceWindowLocation } from '@/lib/browser-navigation';
 
 export default function AdminLoginPage() {

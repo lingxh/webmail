@@ -1238,7 +1238,7 @@ export const useAuthStore = create<AuthState>()(
             if (account.authMode === 'basic' && !account.rememberMe) {
               evictAccount(account.id);
               accountStore.removeAccount(account.id);
-              continue;
+              return;
             }
 
             try {

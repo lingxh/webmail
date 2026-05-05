@@ -26,7 +26,6 @@ import { InlineAppView } from "@/components/layout/inline-app-view";
 import { useSidebarApps } from "@/hooks/use-sidebar-apps";
 import { ResizeHandle } from "@/components/layout/resize-handle";
 import { useIsMobile, useIsTablet } from "@/hooks/use-media-query";
-import type { ContactCard, AddressBook } from "@/lib/jmap/types";
 import { useRefreshGesture } from "@/hooks/use-refresh-gesture";
 import type { ContactCard, AddressBook, AddressBookRights } from "@/lib/jmap/types";
 import { ShareCollectionDialog } from "@/components/settings/share-collection-dialog";

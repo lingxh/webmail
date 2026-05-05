@@ -10,7 +10,7 @@ import { useAccountStore } from "@/stores/account-store";
 import { useThemeStore } from "@/stores/theme-store";
 import { useShallow } from "zustand/react/shallow";
 import { useConfig } from "@/hooks/use-config";
-import { apiFetch, getPathPrefix } from "@/lib/browser-navigation";
+import { apiFetch, getPathPrefix, replaceWindowLocation } from "@/lib/browser-navigation";
 import { cn } from "@/lib/utils";
 import { AlertCircle, Loader2, X, Info, Eye, EyeOff, LogIn, Sun, Moon, Monitor, Check, Shield, Play, Copy } from "lucide-react";
 import { discoverOAuth, type OAuthMetadata } from "@/lib/oauth/discovery";
